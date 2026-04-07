@@ -1,0 +1,26 @@
+{
+  "name": "Pulse — Пульс развлечений",
+  "short_name": "Pulse",
+  "id": "/?source=pwa",
+  "start_url": "/?source=pwa",
+  "scope": "/",
+  "display": "standalone",
+  "display_override": ["standalone", "minimal-ui", "browser"],
+  "orientation": "any",
+  "background_color": "#0a0a0a",
+  "theme_color": "#0a0a0a",
+  "description": "Pulse — пульс развлечений. Фильмы, книги, музыка и события, подобранные под ваш вкус.",
+  "lang": "ru-RU",
+  "dir": "ltr",
+  "categories": ["entertainment", "utilities", "lifestyle"],
+  "prefer_related_applications": false,
+  "icons": [
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any" },
+    { "src": "/icon-maskable-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable" }
+  ],
+  "shortcuts": [
+    { "name": "AI Ассистент", "short_name": "AI", "url": "/#/ai" },
+    { "name": "Фильмы", "short_name": "Фильмы", "url": "/#/movies" }
+  ]
+}

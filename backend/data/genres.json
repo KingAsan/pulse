@@ -1,0 +1,14 @@
+{
+  "cross_category": {
+    "Sci-Fi": {"movies": ["Science Fiction"], "books": ["Science Fiction"], "music": ["Electronic", "Synthwave"]},
+    "Fantasy": {"movies": ["Fantasy"], "books": ["Fantasy"], "music": ["Classical", "Soundtrack"]},
+    "Action": {"movies": ["Action"], "books": ["Adventure", "Thriller"], "music": ["Rock", "Hard Rock"]},
+    "Drama": {"movies": ["Drama"], "books": ["Classic", "Drama"], "music": ["Soul", "Classical"]},
+    "Comedy": {"movies": ["Comedy"], "books": ["Comedy"], "music": ["Pop", "Funk"]},
+    "Horror": {"movies": ["Horror"], "books": ["Horror"], "music": ["Alternative", "Electronic"]},
+    "Romance": {"movies": ["Romance"], "books": ["Romance"], "music": ["Pop", "R&B", "Soul"]},
+    "Mystery": {"movies": ["Mystery", "Crime"], "books": ["Mystery", "Detective", "Thriller"], "music": ["Jazz", "Trip-Hop"]},
+    "Historical": {"movies": ["History", "War"], "books": ["History"], "music": ["Classical"]},
+    "Adventure": {"movies": ["Adventure"], "books": ["Adventure"], "music": ["Rock", "Soundtrack"]}
+  }
+}

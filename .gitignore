@@ -1,0 +1,38 @@
+# Local assistant/tooling
+.claude/
+
+# Environment and secrets
+.env
+**/.env
+**/.env.*
+!backend/.env.example
+
+# Python
+__pycache__/
+**/__pycache__/
+*.py[cod]
+.pytest_cache/
+**/.pytest_cache/
+.venv/
+venv/
+
+# Node
+node_modules/
+**/node_modules/
+frontend/dist/
+
+# Logs
+*.log
+backend/logs/
+backend/flask_output.log
+backend/server.log
+
+# Databases and runtime data
+*.db
+*.sqlite
+*.sqlite3
+
+# OS/Editor
+.DS_Store
+Thumbs.db
+*.swp
