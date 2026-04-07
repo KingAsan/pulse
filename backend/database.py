@@ -6,7 +6,30 @@ import logging
 from config import Config
 
 logger = logging.getLogger(__name__)
-DB_PATH = Config.DATABASE_PATH
+
+
+def _resolve_db_path(configured_path: str) -> str:
+    """Return a writable DB path, fallback to local backend file if needed."""
+    fallback_path = os.path.join(os.path.dirname(__file__), 'entertainment.db')
+    candidate = configured_path or fallback_path
+
+    candidate_dir = os.path.dirname(candidate) or '.'
+    try:
+        os.makedirs(candidate_dir, exist_ok=True)
+        return candidate
+    except Exception:
+        fallback_dir = os.path.dirname(fallback_path) or '.'
+        os.makedirs(fallback_dir, exist_ok=True)
+        if candidate != fallback_path:
+            logger.warning(
+                'DATABASE_PATH=%s is not writable/creatable, falling back to %s',
+                candidate,
+                fallback_path,
+            )
+        return fallback_path
+
+
+DB_PATH = _resolve_db_path(Config.DATABASE_PATH)
 
 
 def get_db():
