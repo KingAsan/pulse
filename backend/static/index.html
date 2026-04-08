@@ -249,8 +249,10 @@ a:hover{color:#33dfff}
 .mobile-menu-links .nav-link{display:block;padding:14px 16px;font-size:1rem;border-radius:var(--radius-sm);margin-bottom:2px}
 .mobile-menu-links .nav-link i{margin-right:8px;min-width:20px}
 .mobile-menu-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color)}
-.mobile-menu-actions .btn{flex:1;min-width:120px}
-.mobile-menu-actions .theme-switcher .btn{width:40px;height:40px;padding:0}
+.mobile-menu-actions .btn{flex:1;min-width:120px;white-space:nowrap}
+.mobile-menu-actions .theme-switcher{position:static}
+.mobile-menu-actions .theme-switcher .btn{width:40px;height:40px;padding:0;flex:0 0 auto;white-space:nowrap}
+.mobile-menu-actions .theme-switcher .theme-dropdown{position:fixed;bottom:80px;left:16px;right:16px;width:auto;min-width:auto;max-height:60vh;overflow-y:auto}
 .mobile-menu-actions .lang-switch{flex:1;justify-content:center}
 
 /* Language switcher */
@@ -340,6 +342,12 @@ a:hover{color:#33dfff}
 /* Event cards home */
 .event-card-home{display:flex;gap:16px;padding:18px;background:rgba(18,20,30,.6);border-radius:var(--radius-md);transition:all .25s cubic-bezier(.4,0,.2,1);border:1px solid rgba(255,255,255,.04);cursor:pointer;backdrop-filter:blur(8px)}
 .event-card-home:hover{border-color:rgba(255,255,255,.1);transform:translateY(-4px);box-shadow:0 12px 36px rgba(0,0,0,.25)}
+
+/* Event card in carousel */
+.card-event .card-body{padding:16px}
+.card-event .event-date-badge{display:flex;flex-direction:column;align-items:center;justify-content:center;width:50px;height:50px;border-radius:var(--radius-sm);background:var(--accent-gradient);line-height:1.2}
+.card-event .event-day{font-size:1.2rem;font-weight:800;color:#fff;line-height:1}
+.card-event .event-month{font-size:.7rem;font-weight:600;color:rgba(255,255,255,.85);text-transform:uppercase}
 .event-date-badge{display:flex;flex-direction:column;align-items:center;justify-content:center;width:54px;height:54px;border-radius:var(--radius-sm);background:var(--accent-gradient);flex-shrink:0}
 .event-day{font-size:1.2rem;font-weight:800;color:#fff;line-height:1}
 .event-month{font-size:.7rem;font-weight:600;color:rgba(255,255,255,.8);text-transform:uppercase}
@@ -2644,24 +2652,24 @@ function HomePage({ navigate }) {
         {events.length > 0 && (
           <RevealSection className="home-section" delay={300}>
             <div className="section-header"><h2 className="section-title"><i className="ri-calendar-event-line"></i> {t('upcomingEvents')}</h2><span className="section-link" onClick={()=>navigate('/events')}>{t('seeAll')} <i className="ri-arrow-right-s-line"></i></span></div>
-            <div className="grid grid-lg">{events.map((e, idx) => {
+            <CarouselWithNav>{events.map((e, idx) => {
               const d = new Date(e.date);
               return (
-                <RevealSection key={e.id} delay={idx * 80} className="event-card-home" style={{cursor:'pointer'}}>
-                  <div onClick={()=>navigate('/events')} style={{display:'flex',gap:16,width:'100%'}}>
-                    <div className="event-date-badge">
+                <div key={e.id} className="card card-event" style={{width:'280px',cursor:'pointer'}} onClick={()=>navigate('/events')}>
+                  <div className="card-body" style={{display:'flex',gap:14,alignItems:'flex-start'}}>
+                    <div className="event-date-badge" style={{flexShrink:0}}>
                       <span className="event-day">{d.getDate()}</span>
                       <span className="event-month">{monthNames[d.getMonth()]}</span>
                     </div>
-                    <div style={{flex:1}}>
-                      <h3 style={{fontSize:'.95rem',fontWeight:600,marginBottom:4}}>{e.title}</h3>
-                      <p style={{fontSize:'.8rem',color:'var(--text-secondary)',marginBottom:6}}>{e.venue} &middot; {e.city}</p>
-                      <span className="badge badge-accent">{e.type}</span>
+                    <div style={{flex:1,minWidth:0}}>
+                      <h3 style={{fontSize:'.9rem',fontWeight:600,marginBottom:4,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.title}</h3>
+                      <p style={{fontSize:'.78rem',color:'var(--text-secondary)',marginBottom:6,overflow:'hidden',textOverflow:'ellipsis',whiteSpace:'nowrap'}}>{e.venue} &middot; {e.city}</p>
+                      <span className="badge badge-accent" style={{fontSize:'.72rem',padding:'3px 10px'}}>{e.type}</span>
                     </div>
                   </div>
-                </RevealSection>
+                </div>
               );
-            })}</div>
+            })}</CarouselWithNav>
           </RevealSection>
         )}
       </div>
