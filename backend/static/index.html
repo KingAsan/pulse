@@ -2543,21 +2543,19 @@ function HomePage({ navigate }) {
         </RevealSection>
         <RevealSection className="home-section" delay={200}>
           <div className="section-header"><h2 className="section-title"><i className="ri-music-2-line"></i> {t('music')}</h2><span className="section-link" onClick={()=>navigate('/music')}>{t('seeAll')} <i className="ri-arrow-right-s-line"></i></span></div>
-          <div className="home-music-grid">{music.map((tr, idx) => (
-            <RevealSection key={tr.id} delay={idx * 60} className="home-music-card" style={{cursor:'pointer'}} >
-              <div onClick={()=>navigate('/music')} style={{display:'contents'}}>
-                {tr.cover ? <ProgressiveImg className="home-music-cover" src={tr.cover} alt="" /> : <div className="home-music-cover" style={{background:'var(--accent-gradient)',display:'flex',alignItems:'center',justifyContent:'center'}}><i className="ri-music-2-fill" style={{fontSize:'1.5rem',color:'#fff'}}></i></div>}
-                <div className="home-music-overlay">
-                  <div className="home-music-play"><i className="ri-play-fill"></i></div>
-                </div>
-                <div className="home-music-info">
-                  <span className="home-music-title">{tr.title}</span>
-                  <span className="home-music-artist">{tr.artist}</span>
-                </div>
-                {tr.duration > 0 && <span className="home-music-dur">{fmtTime(tr.duration)}</span>}
+          <CarouselWithNav>{music.map((tr, idx) => (
+            <div key={tr.id} className="card card-music" style={{width:'185px',cursor:'pointer'}} onClick={()=>navigate('/music')}>
+              <div className="card-image-wrapper">
+                {tr.cover ? <ProgressiveImg className="card-image" src={tr.cover} alt="" /> : <div className="card-placeholder"><i className="ri-music-2-fill"></i></div>}
+                <div className="card-overlay-icon"><i className="ri-play-fill"></i></div>
+                {tr.duration > 0 && <div style={{position:'absolute',top:'8px',right:'8px',fontSize:'.7rem',color:'#fff',background:'rgba(0,0,0,.6)',padding:'2px 7px',borderRadius:'6px',backdropFilter:'blur(4px)'}}>{fmtTime(tr.duration)}</div>}
               </div>
-            </RevealSection>
-          ))}</div>
+              <div className="card-body">
+                <div className="card-title">{tr.title}</div>
+                <div className="card-subtitle">{tr.artist}</div>
+              </div>
+            </div>
+          ))}</CarouselWithNav>
         </RevealSection>
         {events.length > 0 && (
           <RevealSection className="home-section" delay={300}>
