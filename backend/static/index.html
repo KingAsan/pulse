@@ -21,6 +21,7 @@
 :root {
   --bg-primary: #05070d;
   --bg-secondary: #0c0f18;
+  --bg-tertiary: rgba(15,18,28,.75);
   --bg-card: rgba(12,15,24,.9);
   --bg-card-solid: #0e1119;
   --bg-hover: #151927;
@@ -31,10 +32,12 @@
   --text-muted: #454d6a;
   --accent-primary: #00d4ff;
   --accent-secondary: #7c3aed;
+  --accent: #00d4ff;
   --accent-gradient: linear-gradient(135deg, #00d4ff 0%, #7c3aed 50%, #e94560 100%);
   --accent-glow: rgba(0,212,255,.12);
   --border-color: rgba(0,212,255,.06);
   --border-hover: rgba(0,212,255,.15);
+  --border: rgba(0,212,255,.12);
   --success: #34d399;
   --warning: #fbbf24;
   --error: #f43f5e;
@@ -223,6 +226,7 @@ a:hover{color:#33dfff}
 .nav-link.active{color:var(--pulse-cyan);background:rgba(0,212,255,.06)}
 .nav-link.active::after{content:'';position:absolute;bottom:2px;left:50%;transform:translateX(-50%);width:16px;height:2px;background:linear-gradient(90deg,var(--pulse-cyan),var(--pulse-purple));border-radius:1px;box-shadow:0 0 8px rgba(0,212,255,.4)}
 .navbar-right{display:flex;align-items:center;gap:10px;margin-left:auto}
+.navbar-search-form{position:relative}
 .search-input{width:180px;padding:8px 14px;background:rgba(255,255,255,.04);border:1px solid var(--border-color);border-radius:var(--radius-lg);color:var(--text-primary);font-size:.85rem;outline:none;transition:var(--transition);font-family:inherit;backdrop-filter:blur(8px)}
 .search-input:focus{width:240px;border-color:rgba(0,212,255,.4);background:rgba(255,255,255,.06);box-shadow:0 0 0 3px rgba(0,212,255,.06)}
 .search-input::placeholder{color:var(--text-muted)}
@@ -243,7 +247,9 @@ a:hover{color:#33dfff}
 .mobile-menu.open{display:block}
 .mobile-menu-links{display:flex;flex-direction:column;gap:4px}
 .mobile-menu-links .nav-link{display:block;padding:14px 16px;font-size:1rem;border-radius:var(--radius-sm)}
-.mobile-menu-actions{display:flex;gap:8px;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color)}
+.mobile-menu-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color)}
+.mobile-menu-actions .btn{flex:1;min-width:120px}
+.mobile-menu-actions .theme-switcher .btn{width:40px;height:40px;padding:0}
 
 /* Language switcher */
 .lang-switch{display:flex;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border-color);overflow:hidden}
@@ -510,14 +516,30 @@ a:hover{color:#33dfff}
 @media(max-width:900px){
   .footer-inner{grid-template-columns:1fr 1fr;gap:24px}
 }
+@media(max-width:1280px){
+  .container{padding:0 18px}
+  .navbar-inner{gap:12px}
+  .navbar-links{display:none}
+  .mobile-menu-btn{display:flex}
+  .navbar-right{gap:6px}
+  .navbar-search-form,.navbar-right .conn-indicator,.navbar-right .user-name{display:none}
+  .navbar-auth .btn,.navbar-user .btn{padding:6px 10px}
+}
+@media(max-width:1024px){
+  .navbar-right .notif-bell-wrap,.navbar-right .theme-switcher{display:none}
+  .mobile-menu{max-height:calc(100vh - 64px);overflow-y:auto}
+  .lang-btn{padding:5px 8px}
+}
 @media(max-width:768px){
   .container{padding:0 16px}
   .grid{grid-template-columns:repeat(auto-fill,minmax(140px,1fr));gap:12px}
   .navbar-links{display:none}
   .mobile-menu-btn{display:flex}
-  .navbar-right .conn-indicator,.navbar-right .user-name{display:none}
+  .navbar-right .conn-indicator,.navbar-right .user-name,.navbar-right .notif-bell-wrap,.navbar-right .theme-switcher,.navbar-right .lang-switch{display:none}
+  .navbar-user .nav-link-icon{display:none}
   .navbar-right{gap:6px}
-  .navbar-auth .btn,.navbar-user .btn{padding:6px 8px;font-size:0}
+  .navbar-auth .btn{padding:7px 10px;font-size:.78rem}
+  .navbar-user .btn{padding:6px 8px;font-size:0}
   .navbar-auth .btn i,.navbar-user .btn i{font-size:.9rem}
   .lang-switch{font-size:.75rem;padding:4px 8px}
   .detail-layout{flex-direction:column;gap:24px}
@@ -559,6 +581,14 @@ a:hover{color:#33dfff}
   .page-header h1{font-size:1.5rem}
   .detail-title{font-size:1.3rem}
   .navbar-right .btn span,.navbar-auth .btn span{display:none}
+  .navbar-auth .btn-primary{display:none}
+  .auth-page{padding:12px}
+  .auth-card{padding:22px 14px;border-radius:20px}
+  .auth-header h1{font-size:1.55rem}
+  .auth-header p{font-size:.85rem}
+  .auth-brand{gap:8px}
+  .auth-brand .brand-icon{width:34px;height:34px}
+  .auth-brand .brand-text{font-size:1.05rem}
   .admin-grid{grid-template-columns:1fr 1fr}
   .admin-stat{padding:16px}
   .admin-stat .stat-number{font-size:1.3rem}
@@ -569,6 +599,45 @@ a:hover{color:#33dfff}
 }
 
 /* ===== THEMES ===== */
+body.theme-light{
+  --bg-primary:#f4f7fb;
+  --bg-secondary:#ffffff;
+  --bg-tertiary:#eef3fb;
+  --bg-card:rgba(255,255,255,.92);
+  --bg-card-solid:#ffffff;
+  --bg-hover:#e9eff8;
+  --bg-input:#f8fbff;
+  --bg-glass:rgba(255,255,255,.78);
+  --text-primary:#0f172a;
+  --text-secondary:#475569;
+  --text-muted:#64748b;
+  --accent-primary:#0ea5e9;
+  --accent-secondary:#7c3aed;
+  --accent:#0ea5e9;
+  --accent-gradient:linear-gradient(135deg,#0ea5e9,#7c3aed,#ec4899);
+  --accent-glow:rgba(14,165,233,.15);
+  --border-color:rgba(15,23,42,.09);
+  --border-hover:rgba(14,165,233,.28);
+  --border:rgba(15,23,42,.13);
+  --shadow:0 4px 22px rgba(15,23,42,.08);
+  --shadow-lg:0 12px 40px rgba(15,23,42,.14);
+  --shadow-glow:0 0 30px rgba(14,165,233,.08);
+}
+body.theme-light::before{background:radial-gradient(ellipse 80% 50% at 50% -10%,rgba(14,165,233,.06),transparent),radial-gradient(ellipse 50% 40% at 85% 100%,rgba(124,58,237,.04),transparent),radial-gradient(ellipse 40% 30% at 10% 60%,rgba(236,72,153,.03),transparent)}
+body.theme-light::after{background:repeating-linear-gradient(0deg,transparent,transparent 2px,rgba(15,23,42,.025) 2px,rgba(15,23,42,.025) 3px)}
+body.theme-light .navbar{background:rgba(255,255,255,.9);border-bottom:1px solid rgba(15,23,42,.08)}
+body.theme-light .navbar.scrolled{background:rgba(255,255,255,.96);box-shadow:0 4px 30px rgba(15,23,42,.12)}
+body.theme-light .mobile-menu{background:rgba(255,255,255,.97);border-bottom:1px solid rgba(15,23,42,.08);box-shadow:0 16px 40px rgba(15,23,42,.12)}
+body.theme-light .footer{background:rgba(255,255,255,.95);border-top:1px solid rgba(15,23,42,.08)}
+body.theme-light .card{background:rgba(255,255,255,.92);border-color:rgba(15,23,42,.08)}
+body.theme-light .card:hover{box-shadow:0 14px 36px rgba(15,23,42,.14)}
+body.theme-light .auth-card{background:rgba(255,255,255,.92);border-color:rgba(15,23,42,.1)}
+body.theme-light .theme-dropdown{background:rgba(255,255,255,.98);border-color:rgba(15,23,42,.1);box-shadow:0 10px 30px rgba(15,23,42,.16)}
+body.theme-light .theme-opt:hover{background:rgba(14,165,233,.08)}
+body.theme-light .notif-dropdown{background:rgba(255,255,255,.98);border-color:rgba(15,23,42,.1);box-shadow:0 12px 34px rgba(15,23,42,.16)}
+body.theme-light .pwa-install-banner{background:rgba(255,255,255,.97);border-color:rgba(15,23,42,.1);box-shadow:0 10px 26px rgba(15,23,42,.15)}
+body.theme-light .player-bar{background:rgba(248,251,255,.96);border-top:1px solid rgba(15,23,42,.1)}
+
 body.theme-blue{--accent-primary:#00b4d8;--accent-secondary:#0077b6;--accent-gradient:linear-gradient(135deg,#00b4d8,#0077b6);--accent-glow:rgba(0,180,216,.15)}
 body.theme-purple{--accent-primary:#d946ef;--accent-secondary:#7c3aed;--accent-gradient:linear-gradient(135deg,#d946ef,#7c3aed);--accent-glow:rgba(217,70,239,.15)}
 body.theme-green{--accent-primary:#00ff41;--accent-secondary:#059669;--accent-gradient:linear-gradient(135deg,#00ff41,#059669);--accent-glow:rgba(0,255,65,.12)}
@@ -580,7 +649,7 @@ body.theme-anime{--accent-primary:#ff6ec7;--accent-secondary:#e040fb;--accent-gr
 .theme-dropdown.show{opacity:1;pointer-events:all;transform:translateY(0)}
 .theme-opt{padding:10px 14px;border-radius:var(--radius-sm);cursor:pointer;display:flex;align-items:center;gap:10px;font-size:.85rem;color:var(--text-secondary);transition:.2s}
 .theme-opt:hover{background:rgba(255,255,255,.06);color:var(--text-primary)}
-.theme-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px rgba(255,255,255,.1)}
+.theme-dot{width:14px;height:14px;border-radius:50%;flex-shrink:0;box-shadow:0 0 8px rgba(255,255,255,.1);border:1px solid rgba(15,23,42,.25)}
 
 /* ===== AI CHAT ===== */
 .ai-page{max-width:860px;margin:0 auto;padding-top:80px;display:flex;flex-direction:column;min-height:calc(100vh - 80px)}
@@ -927,12 +996,20 @@ body.theme-anime{--accent-primary:#ff6ec7;--accent-secondary:#e040fb;--accent-gr
 .bottom-nav-item.active::after{content:'';display:block;width:4px;height:4px;border-radius:50%;background:var(--accent-primary);margin-top:1px;box-shadow:0 0 6px rgba(0,212,255,.5)}
 @media(max-width:768px){
   .bottom-nav{display:flex}
-  .mobile-menu-btn{display:none!important}
+  .mobile-menu-btn{display:flex!important}
   body{padding-bottom:60px}
   .player-bar{bottom:60px}
   .scroll-top{bottom:130px}
   .fab-ai{bottom:80px}
   .fab-ai-tooltip{bottom:140px}
+}
+@media(max-width:420px){
+  .bottom-nav{height:56px;padding:0 4px}
+  .bottom-nav-item{min-width:44px;padding:6px 6px}
+  .bottom-nav-item span{display:none}
+  .bottom-nav-item i{font-size:1.28rem}
+  body{padding-bottom:56px}
+  .player-bar{bottom:56px}
 }
 
 /* ===== CAROUSEL NAVIGATION ARROWS ===== */
@@ -1153,6 +1230,7 @@ const translations = {
     forceLiteMode: 'Force Lite mode', model: 'Model', dailyLimit: 'Daily limit', save: 'Save', saved: 'Saved',
     title: 'Title', category: 'Category', exportData: 'Export Data', exportSuccess: 'Data exported',
     unblocked: 'Unblocked', userBlocked: 'Blocked', madeAdmin: 'Made admin', removedAdmin: 'Removed admin', deleted: 'Deleted', ruleAdded: 'Rule added',
+    themes: 'Theme', themeDefault: 'Pulse', themeLight: 'Light', themeBlue: 'Blue', themePurple: 'Purple', themeGreen: 'Green', themeGold: 'Gold', themeAnime: 'Anime',
   },
   ru: {
     home: 'Главная', movies: 'Фильмы', books: 'Книги', music: 'Музыка', events: 'События',
@@ -1196,7 +1274,7 @@ const translations = {
     askAI: 'Спросите AI...', sendQuery: 'Отправить', aiHello: 'Привет! Я ваш персональный ассистент. Расскажите, что хотите посмотреть, поиграть или послушать.',
     chipMovie: 'Посоветуй фильм', chipAnime: 'Аниме на вечер', chipGame: 'Во что поиграть', chipSeries: 'Сериал на выходные',
     adminPanel: 'Панель администратора', adminStats: 'Статистика', adminUsers: 'Пользователи', adminRules: 'Правила', adminPinned: 'Закреплённые', adminSettings: 'Настройки', adminExport: 'Экспорт',
-    themes: 'Тема', themeDefault: 'Пульс', themeBlue: 'Синяя', themePurple: 'Фиолетовая', themeGreen: 'Зелёная', themeGold: 'Золотая', themeAnime: 'Аниме',
+    themes: 'Тема', themeDefault: 'Пульс', themeLight: 'Светлая', themeBlue: 'Синяя', themePurple: 'Фиолетовая', themeGreen: 'Зелёная', themeGold: 'Золотая', themeAnime: 'Аниме',
     onboardingTitle: 'Настройте ассистента', onboardingDesc: 'Выберите любимые категории, чтобы получать точные рекомендации', onbDone: 'Готово',
     onbCategories: 'Категории', onbPlatforms: 'Платформы', onbSkip: 'Пропустить',
     liked: 'Нравится', disliked: 'Не нравится', watched: 'Просмотрено',
@@ -1894,6 +1972,7 @@ function ThemeSwitcher() {
   const [open, setOpen] = useState(false);
   const themes = [
     {id:'',name:t('themeDefault'),color:'#00d4ff'},
+    {id:'theme-light',name:t('themeLight'),color:'#f8fafc'},
     {id:'theme-blue',name:t('themeBlue'),color:'#00b4d8'},
     {id:'theme-purple',name:t('themePurple'),color:'#d946ef'},
     {id:'theme-green',name:t('themeGreen'),color:'#00ff41'},
@@ -2061,7 +2140,7 @@ function Navbar({ navigate, currentPath }) {
             {links.map(l => <span key={l.p} className={`nav-link nav-link-icon ${currentPath===l.p||(l.p!=='/'+''&&currentPath.startsWith(l.p))?'active':''}`} onClick={() => handleNav(l.p)}><i className={l.ic}></i> {l.l}</span>)}
           </div>
           <div className="navbar-right">
-            <form onSubmit={handleSearch} style={{position:'relative'}}><i className="ri-search-line" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',fontSize:'.9rem',pointerEvents:'none'}}></i><input className="search-input" style={{paddingLeft:34}} placeholder={t('searchPlaceholder')} value={q} onChange={e=>setQ(e.target.value)} /></form>
+            <form onSubmit={handleSearch} className="navbar-search-form"><i className="ri-search-line" style={{position:'absolute',left:12,top:'50%',transform:'translateY(-50%)',color:'var(--text-muted)',fontSize:'.9rem',pointerEvents:'none'}}></i><input className="search-input" style={{paddingLeft:34}} placeholder={t('searchPlaceholder')} value={q} onChange={e=>setQ(e.target.value)} /></form>
             <div className="conn-indicator" title={online ? t('online') : t('offline')}>
               <span className={`online-dot ${online?'online':'offline'}`}></span>
               <span>{online ? t('online') : t('offline')}</span>
@@ -2097,10 +2176,13 @@ function Navbar({ navigate, currentPath }) {
         </form>
         <div className="mobile-menu-links">
           {links.map(l => <span key={l.p} className={`nav-link nav-link-icon ${currentPath===l.p?'active':''}`} onClick={() => handleNav(l.p)}><i className={l.ic}></i> {l.l}</span>)}
+          {user?.is_admin && <span className="nav-link nav-link-icon" onClick={() => handleNav('/admin')}><i className="ri-shield-star-line"></i> Admin</span>}
+          {user?.is_admin && <span className="nav-link nav-link-icon" onClick={() => handleNav('/cinema')}><i className="ri-movie-2-line"></i> Cinema</span>}
           {user && <span className="nav-link nav-link-icon" onClick={() => handleNav('/profile')}><i className="ri-user-line"></i> {t('profile')}</span>}
         </div>
         <div className="mobile-menu-actions">
           <LangSwitch />
+          <ThemeSwitcher />
           {user ? <button className="btn btn-sm btn-secondary" onClick={handleLogout} style={{flex:1}}><i className="ri-logout-box-r-line"></i> {t('exit')}</button>
             : <><button className="btn btn-sm btn-secondary" onClick={()=>handleNav('/login')} style={{flex:1}}><i className="ri-login-box-line"></i> {t('login')}</button>
               <button className="btn btn-sm btn-primary" onClick={()=>handleNav('/register')} style={{flex:1}}><i className="ri-user-add-line"></i> {t('register')}</button></>}
