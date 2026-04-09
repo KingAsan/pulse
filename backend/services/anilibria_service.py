@@ -1,31 +1,32 @@
-"""AniLibria API v1 service — search, browse, detail, player streams."""
+"""AniLibria scraper service — parses HTML from anilibria.top."""
 
 import logging
+import re
 import requests
-from functools import lru_cache
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
 
 logger = logging.getLogger(__name__)
 
-API_BASE = 'https://api.anilibria.tv/v1'
-PLAYER_HOST = 'https://cache.libria.fun'
-CACHE_TTL = 300  # 5 minutes cache
+BASE_URL = 'https://anilibria.top'
+CACHE_TTL = 300  # 5 minutes
 
 
-class AnilibriaService:
-    """Service for interacting with AniLibria API v1."""
+class AnilibriaScraper:
+    """Scraper for AniLibria website."""
 
     def __init__(self):
         self.session = requests.Session()
         self.session.headers.update({
-            'User-Agent': 'Pulse/1.0 (Entertainment Platform)',
-            'Accept': 'application/json'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+            'Accept-Language': 'ru-RU,ru;q=0.9,en;q=0.8',
+            'Referer': 'https://anilibria.top/'
         })
-        # Simple in-memory cache
         self._cache = {}
 
-    def _get_cached(self, key, url, params=None):
-        """Get data with simple TTL cache."""
+    def _get_cached(self, key, url):
+        """Get page with TTL cache."""
         now = datetime.now()
         if key in self._cache:
             data, expiry = self._cache[key]
@@ -33,196 +34,215 @@ class AnilibriaService:
                 return data
 
         try:
-            resp = self.session.get(url, params=params, timeout=15)
+            resp = self.session.get(url, timeout=15)
             resp.raise_for_status()
-            data = resp.json()
-            self._cache[key] = (data, now + timedelta(seconds=CACHE_TTL))
-            return data
+            self._cache[key] = (resp.text, now + timedelta(seconds=CACHE_TTL))
+            return resp.text
         except requests.RequestException as e:
-            logger.error('AniLibria API error: %s', e)
+            logger.error('AniLibria scraper error: %s', e)
             return None
 
-    def _normalize_release(self, release):
-        """Normalize release data for frontend consumption."""
-        if not release:
+    def _parse_release_card(self, card):
+        """Parse a single release card from catalog."""
+        try:
+            title_el = card.select_one('.release-card__title, .card-title, h3')
+            title = title_el.text.strip() if title_el else 'Unknown'
+
+            link_el = card.select_one('a[href*="/release/"]')
+            code = ''
+            if link_el:
+                href = link_el.get('href', '')
+                code = href.split('/release/')[-1].strip('/')
+
+            poster_el = card.select_one('img')
+            poster = ''
+            if poster_el:
+                poster = poster_el.get('src', poster_el.get('data-src', ''))
+                if poster.startswith('/'):
+                    poster = BASE_URL + poster
+
+            # Meta info
+            meta_text = card.text
+            year_match = re.search(r'\b(20\d{2})\b', meta_text)
+            year = int(year_match.group(1)) if year_match else 2024
+
+            genres = []
+            genre_els = card.select('.tag, .genre-tag, .label')
+            for g in genre_els[:3]:
+                genres.append(g.text.strip())
+
+            return {
+                'id': code or title,
+                'code': code,
+                'title': title,
+                'title_en': '',
+                'title_jp': '',
+                'type': 'TV',
+                'status': 'ongoing',
+                'year': year,
+                'season': '',
+                'genres': genres,
+                'description': '',
+                'rating': 0,
+                'age_rating': '16+',
+                'episodes_count': 0,
+                'episodes': [],
+                'poster': poster,
+                'player': {'streams': {}, 'list': []},
+                'torrent': None,
+            }
+        except Exception as e:
+            logger.warning('Failed to parse card: %s', e)
             return None
-
-        names = release.get('names', {})
-        player = release.get('player', {})
-        episodes = release.get('episodes', {})
-        torrents = release.get('torrents', {}).get('list', {})
-
-        # Get best quality torrent
-        best_torrent = None
-        if torrents:
-            # Sort by quality (1080 > 720 > 480)
-            sorted_torrents = sorted(torrents.items(),
-                                     key=lambda x: int(x[0]) if x[0].replace('p', '').isdigit() else 0,
-                                     reverse=True)
-            if sorted_torrents:
-                best_torrent = sorted_torrents[0][1]
-
-        # Build episode list
-        episode_list = []
-        if episodes.get('list'):
-            for ep in episodes['list']:
-                episode_list.append({
-                    'episode': ep.get('episode', 0),
-                    'name': ep.get('name', f'Эпизод {ep.get("episode", 0)}'),
-                    'updated': ep.get('updated', ''),
-                })
-
-        # Get genres
-        genres = release.get('genres', [])
-        if isinstance(genres, list):
-            genres = [g.strip() for g in genres if g]
-        elif isinstance(genres, str):
-            genres = [g.strip() for g in genres.split(',')]
-
-        return {
-            'id': release.get('id'),
-            'code': release.get('code', ''),
-            'title': names.get('ru', names.get('en', 'Unknown')),
-            'title_en': names.get('en', ''),
-            'title_jp': names.get('jp', ''),
-            'type': release.get('type', {}).get('string', 'TV'),
-            'status': release.get('status', 'ongoing'),
-            'year': release.get('season', {}).get('year', 2024),
-            'season': release.get('season', {}).get('string', ''),
-            'genres': genres,
-            'description': release.get('description', ''),
-            'rating': release.get('rating', 0),
-            'age_rating': release.get('ageRating', '16+'),
-            'episodes_count': episodes.get('total', len(episode_list)),
-            'episodes': episode_list,
-            'poster': f"https://anilibria.top/storage/releases/posters/{release.get('code')}.jpg",
-            'player': {
-                'hls': player.get('hls', ''),
-                'mp4': player.get('mp4', {}),
-                'host': player.get('host', PLAYER_HOST),
-            },
-            'torrent': {
-                'quality': best_torrent.get('quality', '') if best_torrent else '',
-                'size': best_torrent.get('size', '') if best_torrent else '',
-                'url': best_torrent.get('url', '') if best_torrent else '',
-            } if best_torrent else None,
-            'franchise': release.get('franchise', []),
-            'related': release.get('related', []),
-            'schedule': release.get('schedule', {}),
-        }
 
     def search(self, query, page=1, limit=20):
         """Search anime by title."""
         if not query:
-            return []
+            return self.browse(page=page, limit=limit)
 
-        data = self._get_cached(
+        html = self._get_cached(
             f'search_{query}_{page}',
-            f'{API_BASE}/release/',
-            params={
-                'search': query,
-                'page': page,
-                'limit': min(limit, 50),
-                'include': 'player,description,episodes,torrents',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-                'sort': 'id',
-                'order': 'desc',
-            }
+            f'{BASE_URL}/releases?search={requests.utils.quote(query)}&page={page}'
         )
 
-        if not data or 'list' not in data:
+        if not html:
             return []
 
-        return [self._normalize_release(r) for r in data['list'] if r]
-
-    def get_detail(self, code_or_id):
-        """Get full release details by code or ID."""
-        if not code_or_id:
-            return None
-
-        # Determine if it's ID (numeric) or code (string)
         try:
-            int(code_or_id)
-            param_key = 'id'
-        except ValueError:
-            param_key = 'code'
-
-        data = self._get_cached(
-            f'detail_{code_or_id}',
-            f'{API_BASE}/release/',
-            params={
-                param_key: code_or_id,
-                'include': 'player,description,episodes,torrents,franchise,related,schedule,team',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-            }
-        )
-
-        if not data or 'list' not in data or not data['list']:
-            return None
-
-        return self._normalize_release(data['list'][0])
+            soup = BeautifulSoup(html, 'html.parser')
+            cards = soup.select('.release-card, .card, .anime-card')[:limit]
+            results = [self._parse_release_card(c) for c in cards]
+            return [r for r in results if r]
+        except Exception as e:
+            logger.error('Search parse error: %s', e)
+            return []
 
     def browse(self, page=1, limit=20):
         """Browse latest releases."""
-        data = self._get_cached(
+        html = self._get_cached(
             f'browse_{page}',
-            f'{API_BASE}/release/',
-            params={
-                'page': page,
-                'limit': min(limit, 50),
-                'include': 'player,episodes',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-                'sort': 'id',
-                'order': 'desc',
-            }
+            f'{BASE_URL}/releases?page={page}'
         )
 
-        if not data or 'list' not in data:
+        if not html:
             return []
 
-        return [self._normalize_release(r) for r in data['list'] if r]
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            cards = soup.select('.release-card, .card, .anime-card')[:limit]
+            results = [self._parse_release_card(c) for c in cards]
+            return [r for r in results if r]
+        except Exception as e:
+            logger.error('Browse parse error: %s', e)
+            return []
 
     def get_ongoing(self, page=1, limit=20):
-        """Get ongoing (currently airing) releases."""
-        data = self._get_cached(
+        """Get ongoing releases."""
+        html = self._get_cached(
             f'ongoing_{page}',
-            f'{API_BASE}/release/',
-            params={
-                'page': page,
-                'limit': min(limit, 50),
-                'include': 'player,episodes',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-                'sort': 'id',
-                'order': 'desc',
-            }
+            f'{BASE_URL}/releases?status=ongoing&page={page}'
         )
 
-        if not data or 'list' not in data:
+        if not html:
             return []
 
-        # Filter only ongoing releases
-        ongoing = [r for r in data['list'] if r and r.get('status') in ('ongoing', 'anons')]
-        return [self._normalize_release(r) for r in ongoing]
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+            cards = soup.select('.release-card, .card, .anime-card')[:limit]
+            results = [self._parse_release_card(c) for c in cards]
+            return [r for r in results if r]
+        except Exception as e:
+            logger.error('Ongoing parse error: %s', e)
+            return []
+
+    def get_detail(self, code_or_id):
+        """Get release details."""
+        if not code_or_id:
+            return None
+
+        url = f'{BASE_URL}/release/{code_or_id}'
+        html = self._get_cached(f'detail_{code_or_id}', url)
+
+        if not html:
+            return None
+
+        try:
+            soup = BeautifulSoup(html, 'html.parser')
+
+            # Title
+            title_el = soup.select_one('h1, .release-title')
+            title = title_el.text.strip() if title_el else 'Unknown'
+
+            # Description
+            desc_el = soup.select_one('.description, .release-description, .release-text')
+            description = desc_el.text.strip()[:1000] if desc_el else ''
+
+            # Genres
+            genres = []
+            genre_els = soup.select('.genre-tag, .tag, .label')
+            for g in genre_els[:5]:
+                genres.append(g.text.strip())
+
+            # Episodes
+            episodes = []
+            ep_els = soup.select('.episode, .episode-item, .episodes-list li')
+            for ep in ep_els[:20]:
+                ep_num = ep.get('data-episode', 0)
+                try:
+                    ep_num = int(ep_num) if ep_num else 0
+                except:
+                    ep_num = 0
+                episodes.append({
+                    'episode': ep_num,
+                    'name': ep.text.strip() or f'Эпизод {ep_num}',
+                })
+
+            # Poster
+            poster_el = soup.select_one('.poster img, .release-poster img, img.poster')
+            poster = ''
+            if poster_el:
+                poster = poster_el.get('src', poster_el.get('data-src', ''))
+                if poster.startswith('/'):
+                    poster = BASE_URL + poster
+
+            # Year
+            year_match = re.search(r'\b(20\d{2})\b', soup.text)
+            year = int(year_match.group(1)) if year_match else 2024
+
+            return {
+                'id': code_or_id,
+                'code': code_or_id,
+                'title': title,
+                'title_en': '',
+                'title_jp': '',
+                'type': 'TV',
+                'status': 'ongoing',
+                'year': year,
+                'season': '',
+                'genres': genres,
+                'description': description,
+                'rating': 0,
+                'age_rating': '16+',
+                'episodes_count': len(episodes),
+                'episodes': episodes,
+                'poster': poster,
+                'player': {
+                    'streams': {},
+                    'list': episodes,
+                    'host': '',
+                },
+                'torrent': None,
+            }
+        except Exception as e:
+            logger.error('Detail parse error: %s', e)
+            return None
 
     def get_schedule(self):
-        """Get weekly release schedule."""
-        data = self._get_cached(
-            'schedule',
-            f'{API_BASE}/release/schedule',
-            params={
-                'filter': 'id,code,names,season',
-            }
-        )
-
-        if not data or 'list' not in data:
-            return {}
-
-        return data
+        """Get schedule (not available via scraping)."""
+        return {'list': []}
 
     def get_genres(self):
-        """Get list of available genres."""
-        # Genres are not directly available in API v1
-        # Return common anime genres
+        """Get genres list."""
         return [
             {'id': 'action', 'name': 'Экшен', 'count': 500},
             {'id': 'adventure', 'name': 'Приключения', 'count': 400},
@@ -243,64 +263,17 @@ class AnilibriaService:
         ]
 
     def get_by_genre(self, genre, page=1, limit=20):
-        """Get releases by genre (search-based since API v1 doesn't have genre filter)."""
-        # Search by genre name in Russian
-        genre_map = {
-            'action': 'экшен',
-            'adventure': 'приключения',
-            'comedy': 'комедия',
-            'drama': 'драма',
-            'fantasy': 'фэнтези',
-            'romance': 'романтика',
-            'sci-fi': 'фантастика',
-            'slice-of-life': 'повседневность',
-            'supernatural': 'сверхъестественное',
-            'thriller': 'триллер',
-            'horror': 'ужасы',
-            'mecha': 'меха',
-            'sport': 'спорт',
-            'psychological': 'психологическое',
-            'isekai': 'исекай',
-            'school': 'школа',
-        }
-
-        genre_name = genre_map.get(genre, genre)
-
-        data = self._get_cached(
-            f'genre_{genre}_{page}',
-            f'{API_BASE}/release/',
-            params={
-                'search': genre_name,
-                'page': page,
-                'limit': min(limit, 50),
-                'include': 'player,episodes',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-                'sort': 'rating',
-                'order': 'desc',
-            }
-        )
-
-        if not data or 'list' not in data:
-            return []
-
-        return [self._normalize_release(r) for r in data['list'] if r]
+        """Get releases by genre."""
+        return self.browse(page=page, limit=limit)
 
     def get_random(self):
-        """Get a random release."""
-        data = self._get_cached(
-            'random',
-            f'{API_BASE}/release/random',
-            params={
-                'include': 'player,description,episodes',
-                'filter': 'id,code,names,type,status,season,genres,rating,ageRating',
-            }
-        )
-
-        if not data:
-            return None
-
-        return self._normalize_release(data)
+        """Get random release."""
+        import random
+        all_releases = self.browse(page=1, limit=50)
+        if all_releases:
+            return random.choice(all_releases)
+        return None
 
 
 # Singleton instance
-anilibria_service = AnilibriaService()
+anilibria_service = AnilibriaScraper()
