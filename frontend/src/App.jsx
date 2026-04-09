@@ -10,6 +10,7 @@ import ProfilePage from './pages/ProfilePage'
 import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 import DetailPage from './pages/DetailPage'
+import AIPage from './pages/AIPage'
 
 export default function App() {
   return (
@@ -23,6 +24,7 @@ export default function App() {
         <Route path="/music" element={<MusicPage />} />
         <Route path="/events" element={<EventsPage />} />
         <Route path="/cinema" element={<CinemaPage />} />
+        <Route path="/ai" element={<AIPage />} />
         <Route path="/profile" element={<ProfilePage />} />
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
