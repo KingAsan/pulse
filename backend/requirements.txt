@@ -10,3 +10,5 @@ python-dotenv==1.2.2
 youtube-search==2.2.0
 pillow==12.2.0
 pytest==9.0.2
+beautifulsoup4 
+beautifulsoup4==4.12.3
