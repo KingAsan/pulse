@@ -325,7 +325,11 @@ export default function AIPage() {
                     </div>
                   </div>
                 ))}
-                {recommendMutation.isPending && <SkeletonChatMessage />}
+                {recommendMutation.isPending && (
+                  <div className="typing-indicator">
+                    <span></span><span></span><span></span>
+                  </div>
+                )}
                 <div ref={messagesEndRef} />
               </div>
             )}
