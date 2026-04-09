@@ -17,6 +17,8 @@ def validate_email(email):
 def validate_password(password):
     if len(password) < 8:
         return False, 'Password must be at least 8 characters'
+    if len(password) > 128:
+        return False, 'Password must be at most 128 characters'
     if not re.search(r'[A-ZА-ЯЁ]', password):
         return False, 'Password must contain at least one uppercase letter'
     if not re.search(r'\d', password):

@@ -58,7 +58,7 @@ def register():
         if 'UNIQUE' in str(e):
             return jsonify({'error': 'Username or email already exists'}), 409
         logger.exception('Registration error for %s', username)
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'error': 'Registration failed. Please try again.'}), 500
     finally:
         db.close()
 

@@ -27,13 +27,13 @@ def recommend():
     assistant_mode = data.get('assistant_mode', 'balanced')
     temporary = data.get('temporary', False)
 
-    loop = asyncio.new_event_loop()
     try:
-        result = loop.run_until_complete(
+        result = asyncio.run(
             get_recommendation(user_id, query, session_id, mood, company, time_minutes, assistant_mode, temporary)
         )
-    finally:
-        loop.close()
+    except Exception as e:
+        logger.exception('AI recommendation error')
+        return jsonify({'error': 'AI service unavailable. Please try again.', 'source': 'error'}), 503
 
     return jsonify(result)
 
@@ -51,13 +51,13 @@ def plan_evening():
     query = f"Составь идеальный план вечера. Настроение: {mood}. Компания: {company}. Свободное время: {time_minutes} минут. Подбери: 1 фильм или сериал, 3 музыкальных трека для фона, 1 книгу если останется время. Для каждого обязательно укажи title, category, description, year_genre, why_this."
     session_id = f"evening_{user_id}_{int(__import__('time').time())}"
 
-    loop = asyncio.new_event_loop()
     try:
-        result = loop.run_until_complete(
+        result = asyncio.run(
             get_recommendation(user_id, query, session_id, mood, company, time_minutes, 'deep', False)
         )
-    finally:
-        loop.close()
+    except Exception as e:
+        logger.exception('Evening plan error')
+        return jsonify({'error': 'AI service unavailable. Please try again.', 'source': 'error'}), 503
     return jsonify(result)
 
 

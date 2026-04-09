@@ -1594,6 +1594,7 @@ const api = {
   },
   get: (u) => api.request('GET', u),
   post: (u, d) => api.request('POST', u, d),
+  put: (u, d) => api.request('PUT', u, d),
   del: (u, d) => api.request('DELETE', u, d),
   setToken(t) { this.token = t; if (t) localStorage.setItem('token', t); else localStorage.removeItem('token'); }
 };
@@ -3762,6 +3763,7 @@ function AdminPage({ navigate }) {
   const [rules, setRules] = useState([]);
   const [pinned, setPinned] = useState([]);
   const [settings, setSettings] = useState(null);
+  const [newRule, setNewRule] = useState({title:'',category:'',rule_type:'blacklist',notes:''});
 
   if (!user || !user.is_admin) return <div className="container" style={{paddingTop:100}}><div className="empty-state"><div className="empty-icon"><i className="ri-shield-star-line"></i></div><h3>{t('adminRequired')}</h3><button className="btn btn-primary" onClick={()=>navigate('/')} style={{marginTop:16}}>{t('goHome')}</button></div></div>;
 
@@ -3787,7 +3789,6 @@ function AdminPage({ navigate }) {
   const deleteRule = async (id) => { await api.del(`/api/admin/content-rules/${id}`); toast.addToast(t('deleted'), 'success'); load(); };
   const deletePinned = async (id) => { await api.del(`/api/admin/pinned/${id}`); toast.addToast(t('deleted'), 'success'); load(); };
 
-  const [newRule, setNewRule] = useState({title:'',category:'',rule_type:'blacklist',notes:''});
   const addRule = async () => {
     if (!newRule.title && !newRule.category) return;
     await api.post('/api/admin/content-rules', newRule);
@@ -3996,7 +3997,10 @@ function CinemaPlayer({ hlsUrl }) {
   // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
-      if (!playerRef.current?.contains(document.activeElement) && document.activeElement?.tagName !== 'BODY') return;
+      // Don't trigger shortcuts when typing in inputs
+      const tag = document.activeElement?.tagName;
+      if (['INPUT', 'TEXTAREA', 'SELECT'].includes(tag)) return;
+      if (!playerRef.current?.contains(document.activeElement) && tag !== 'BODY') return;
       const v = videoRef.current;
       if (!v) return;
       switch(e.key) {
