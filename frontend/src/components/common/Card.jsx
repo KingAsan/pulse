@@ -1,12 +1,13 @@
+import { memo, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import './Card.css'
 
-export default function Card({ image, title, subtitle, rating, badge, link, type, children }) {
+const Card = memo(function Card({ image, title, subtitle, rating, badge, link, type, children }) {
   const navigate = useNavigate()
 
-  const handleClick = () => {
+  const handleClick = useCallback(() => {
     if (link) navigate(link)
-  }
+  }, [link, navigate])
 
   return (
     <div className={`card ${link ? 'card-clickable' : ''} card-${type || 'default'}`} onClick={handleClick}>
@@ -32,4 +33,6 @@ export default function Card({ image, title, subtitle, rating, badge, link, type
       </div>
     </div>
   )
-}
+})
+
+export default Card

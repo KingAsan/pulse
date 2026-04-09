@@ -36,30 +36,35 @@ export default function AIPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
-  // Load chat history when session changes
+  // Load chat history when session changes - O(n) instead of O(n^2)
   useEffect(() => {
     if (chatHistory && chatHistory.length > 0) {
-      const formattedMessages = chatHistory.map(msg => ({
-        id: msg.id,
-        role: 'user',
-        content: msg.user_query,
-        timestamp: msg.timestamp,
-      })).flatMap((msg, idx, arr) => {
-        // Find corresponding AI response
-        const aiResponse = chatHistory.find(m => m.id === msg.id)?.ai_response
-        if (!aiResponse) return [msg]
+      // Build a Map for O(1) lookups instead of O(n) find()
+      const historyMap = new Map(chatHistory.map(msg => [msg.id, msg]))
+      
+      const formattedMessages = []
+      
+      chatHistory.forEach(msg => {
+        // Add user message
+        formattedMessages.push({
+          id: msg.id,
+          role: 'user',
+          content: msg.user_query,
+          timestamp: msg.timestamp,
+        })
         
-        return [
-          msg,
-          {
+        // Add AI response if exists
+        if (msg.ai_response) {
+          formattedMessages.push({
             id: `ai-${msg.id}`,
             role: 'ai',
-            content: aiResponse,
-            recommendations: JSON.parse(chatHistory.find(m => m.id === msg.id)?.ai_response_json || '[]'),
+            content: msg.ai_response,
+            recommendations: msg.ai_response_json ? JSON.parse(msg.ai_response_json) : [],
             timestamp: msg.timestamp,
-          }
-        ]
+          })
+        }
       })
+      
       setMessages(formattedMessages)
     }
   }, [chatHistory])

@@ -1,35 +1,47 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useCallback } from 'react'
 
 export function useSwipe(onSwipeLeft, onSwipeRight, threshold = 50) {
-  const [touchStart, setTouchStart] = useState(null)
-  const [touchEnd, setTouchEnd] = useState(null)
+  const touchStartRef = useRef(null)
+  const touchEndRef = useRef(null)
+  const onSwipeLeftRef = useRef(onSwipeLeft)
+  const onSwipeRightRef = useRef(onSwipeRight)
 
-  const minSwipeDistance = threshold
+  // Keep callbacks up-to-date without re-running effect
+  useEffect(() => {
+    onSwipeLeftRef.current = onSwipeLeft
+    onSwipeRightRef.current = onSwipeRight
+  }, [onSwipeLeft, onSwipeRight])
 
   useEffect(() => {
+    const minSwipeDistance = threshold
+
     const handleTouchStart = (e) => {
-      setTouchEnd(null)
-      setTouchStart(e.targetTouches[0].clientX)
+      touchStartRef.current = e.targetTouches[0].clientX
+      touchEndRef.current = null
     }
 
     const handleTouchMove = (e) => {
-      setTouchEnd(e.targetTouches[0].clientX)
+      touchEndRef.current = e.targetTouches[0].clientX
     }
 
     const handleTouchEnd = () => {
-      if (!touchStart || !touchEnd) return
+      if (!touchStartRef.current || !touchEndRef.current) return
       
-      const distance = touchStart - touchEnd
+      const distance = touchStartRef.current - touchEndRef.current
       const isLeftSwipe = distance > minSwipeDistance
       const isRightSwipe = distance < -minSwipeDistance
 
-      if (isLeftSwipe && onSwipeLeft) {
-        onSwipeLeft()
+      if (isLeftSwipe && onSwipeLeftRef.current) {
+        onSwipeLeftRef.current()
       }
 
-      if (isRightSwipe && onSwipeRight) {
-        onSwipeRight()
+      if (isRightSwipe && onSwipeRightRef.current) {
+        onSwipeRightRef.current()
       }
+
+      // Reset
+      touchStartRef.current = null
+      touchEndRef.current = null
     }
 
     // Add passive event listeners for better performance
@@ -42,5 +54,5 @@ export function useSwipe(onSwipeLeft, onSwipeRight, threshold = 50) {
       document.removeEventListener('touchmove', handleTouchMove)
       document.removeEventListener('touchend', handleTouchEnd)
     }
-  }, [touchStart, touchEnd, onSwipeLeft, onSwipeRight, minSwipeDistance])
+  }, [threshold])
 }
