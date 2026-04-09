@@ -63,7 +63,7 @@ def create_app():
     from routes.ai_chat import ai_chat_bp
     from routes.assistant import assistant_bp
     from routes.hdrezka import hdrezka_bp
-    from routes.animevost import animevost_bp
+    from routes.anilibria import anilibria_bp
 
     # Apply specific rate limits
     limiter.limit("3 per minute")(auth_bp)
@@ -82,7 +82,7 @@ def create_app():
     app.register_blueprint(ai_chat_bp, url_prefix='/api/ai')
     app.register_blueprint(assistant_bp, url_prefix='/api/assistant')
     app.register_blueprint(hdrezka_bp, url_prefix='/api/hdrezka')
-    app.register_blueprint(animevost_bp, url_prefix='/api/animevost')
+    app.register_blueprint(anilibria_bp, url_prefix='/api/anilibria')
 
     @app.route('/api/health')
     def health():
