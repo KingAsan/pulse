@@ -250,10 +250,15 @@ a:hover{color:#33dfff}
 .mobile-menu-links .nav-link i{margin-right:8px;min-width:20px}
 .mobile-menu-actions{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px;padding-top:12px;border-top:1px solid var(--border-color);align-items:center;justify-content:center}
 .mobile-menu-actions .btn{flex:1;min-width:120px;white-space:nowrap}
-.mobile-menu-actions .theme-switcher{position:relative;flex:0 0 auto}
-.mobile-menu-actions .theme-switcher .btn{width:44px;height:44px;padding:0;flex:0 0 auto;white-space:nowrap;border-radius:var(--radius-sm)}
-.mobile-menu-actions .theme-switcher .theme-dropdown{position:fixed;bottom:20px;left:16px;right:16px;width:auto;min-width:auto;max-height:70vh;overflow-y:auto;z-index:10000}
 .mobile-menu-actions .lang-switch{flex:0 0 auto;justify-content:center}
+
+/* Mobile theme switcher - inline grid */
+.theme-switcher-mobile{display:flex;flex-direction:column;gap:8px;flex:1;min-width:100%}
+.theme-switcher-mobile .btn{width:100%;justify-content:center}
+.theme-grid-mobile{display:grid;grid-template-columns:repeat(2,1fr);gap:6px;padding:8px;background:var(--bg-secondary);border-radius:var(--radius-sm);border:1px solid var(--border-color)}
+.theme-opt-mobile{display:flex;align-items:center;gap:8px;padding:10px 12px;border-radius:var(--radius-sm);background:var(--bg-card);border:1px solid var(--border-color);color:var(--text-secondary);cursor:pointer;transition:all .2s;font-size:.82rem}
+.theme-opt-mobile:hover{background:var(--bg-hover);color:var(--text-primary)}
+.theme-opt-mobile .theme-dot{width:16px;height:16px;border-radius:50%;flex-shrink:0;border:2px solid rgba(255,255,255,.1)}
 
 /* Language switcher */
 .lang-switch{display:flex;background:var(--bg-card);border-radius:var(--radius-sm);border:1px solid var(--border-color);overflow:hidden}
@@ -712,6 +717,10 @@ body.theme-light::after{background:repeating-linear-gradient(0deg,transparent,tr
 body.theme-light .navbar{background:rgba(245,247,250,.92);border-bottom:1px solid rgba(26,32,44,.08)}
 body.theme-light .navbar.scrolled{background:rgba(245,247,250,.97);box-shadow:0 4px 30px rgba(26,32,44,.08)}
 body.theme-light .mobile-menu{background:rgba(245,247,250,.97);border-bottom:1px solid rgba(26,32,44,.08);box-shadow:0 16px 40px rgba(26,32,44,.1)}
+body.theme-light .theme-switcher-mobile .btn{background:rgba(26,32,44,.05);color:var(--text-primary);border-color:var(--border-color)}
+body.theme-light .theme-grid-mobile{background:rgba(240,242,245,.8);border-color:rgba(26,32,44,.08)}
+body.theme-light .theme-opt-mobile{background:rgba(255,255,255,.8);border-color:rgba(26,32,44,.08);color:var(--text-secondary)}
+body.theme-light .theme-opt-mobile:hover{background:rgba(26,32,44,.04);color:var(--text-primary)}
 body.theme-light .bottom-nav{background:rgba(245,247,250,.98);border-top:1px solid rgba(26,32,44,.08)}
 body.theme-light .footer{background:rgba(240,242,245,.95);border-top:1px solid rgba(26,32,44,.08)}
 body.theme-light .card{background:rgba(245,247,250,.88);border-color:rgba(26,32,44,.08)}
@@ -2156,7 +2165,7 @@ function BackButton({ goBack }) {
   return <button className="btn-back" onClick={goBack}><i className="ri-arrow-left-s-line"></i> {t('back')}</button>;
 }
 
-function ThemeSwitcher() {
+function ThemeSwitcher({ mobile = false }) {
   const { t } = useLang();
   const [open, setOpen] = useState(false);
   const themes = [
@@ -2171,22 +2180,43 @@ function ThemeSwitcher() {
   const setTheme = (id) => {
     document.body.className = id;
     localStorage.setItem('theme', id);
-    // Update meta theme-color for browsers
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
       metaThemeColor.content = id === 'theme-light' ? '#e8ecf1' : '#0f0f1a';
     }
-    setOpen(false);
+    if (!mobile) setOpen(false);
   };
   useEffect(() => {
     const saved = localStorage.getItem('theme');
     if (saved) document.body.className = saved;
-    // Restore meta theme-color on load
     const metaThemeColor = document.querySelector('meta[name="theme-color"]');
     if (metaThemeColor) {
       metaThemeColor.content = saved === 'theme-light' ? '#e8ecf1' : '#0f0f1a';
     }
   }, []);
+  
+  // Mobile version: inline theme grid
+  if (mobile) {
+    return (
+      <div className="theme-switcher-mobile">
+        <button className="btn btn-sm btn-secondary" onClick={()=>setOpen(!open)}>
+          <i className="ri-palette-line"></i> {t('themes')}
+        </button>
+        {open && (
+          <div className="theme-grid-mobile">
+            {themes.map(th => (
+              <button key={th.id} className="theme-opt-mobile" onClick={()=>setTheme(th.id)}>
+                <span className="theme-dot" style={{background:th.color}}></span>
+                {th.name}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    );
+  }
+  
+  // Desktop version: dropdown
   return (
     <div className="theme-switcher">
       <button className="btn btn-sm btn-secondary btn-icon" onClick={()=>setOpen(!open)} title={t('themes')} aria-label={t('themes')} aria-expanded={open}><i className="ri-palette-line"></i></button>
@@ -2381,7 +2411,7 @@ function Navbar({ navigate, currentPath }) {
         </div>
         <div className="mobile-menu-actions">
           <LangSwitch />
-          <ThemeSwitcher />
+          <ThemeSwitcher mobile={true} />
           {user ? <button className="btn btn-sm btn-secondary" onClick={handleLogout} style={{flex:1}}><i className="ri-logout-box-r-line"></i> {t('exit')}</button>
             : <><button className="btn btn-sm btn-secondary" onClick={()=>handleNav('/login')} style={{flex:1}}><i className="ri-login-box-line"></i> {t('login')}</button>
               <button className="btn btn-sm btn-primary" onClick={()=>handleNav('/register')} style={{flex:1}}><i className="ri-user-add-line"></i> {t('register')}</button></>}
