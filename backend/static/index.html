@@ -4102,8 +4102,18 @@ function CinemaPage({ navigate }) {
   const loadMovies = (pg = 1) => {
     setLoading(true);
     api.get(`/api/hdrezka/browse?category=films&page=${pg}`)
-      .then(d => setItems(pg === 1 ? d : [...items, ...d]))
-      .catch(() => toast.addToast('Failed to load', 'error'))
+      .then(d => {
+        const data = Array.isArray(d) ? d : (d.items || d.data || []);
+        if (data.length === 0 && pg === 1) {
+          // Возможно HDRezka API не настроен
+          console.warn('HDRezka returned empty data - API may not be configured');
+        }
+        setItems(data);
+      })
+      .catch(err => {
+        console.error('HDRezka error:', err);
+        setItems([]);
+      })
       .finally(() => setLoading(false));
   };
 
