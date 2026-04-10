@@ -3974,10 +3974,36 @@ function CinemaPlayer({ hlsUrl }) {
   };
 
   const toggleFullscreen = () => {
-    const el = playerRef.current;
-    if (!el) return;
-    if (document.fullscreenElement) document.exitFullscreen().catch(()=>{});
-    else el.requestFullscreen().catch(()=>{});
+    const video = videoRef.current;
+    const player = playerRef.current;
+    if (!video) return;
+    
+    // Check if fullscreen is supported
+    const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+    
+    try {
+      if (document.fullscreenElement) {
+        document.exitFullscreen().catch(()=>{});
+      } else {
+        // On mobile, request fullscreen on video element
+        // On desktop, request fullscreen on player container
+        const target = isMobile ? video : player;
+        if (target.requestFullscreen) {
+          target.requestFullscreen().catch(err => {
+            console.error('Fullscreen error:', err);
+          });
+        } else if (target.webkitRequestFullscreen) {
+          target.webkitRequestFullscreen();
+        } else if (target.webkitEnterFullscreen) {
+          // iOS Safari
+          target.webkitEnterFullscreen();
+        } else if (target.msRequestFullscreen) {
+          target.msRequestFullscreen();
+        }
+      }
+    } catch (err) {
+      console.error('Fullscreen error:', err);
+    }
   };
 
   const fmtTime = (s) => {
