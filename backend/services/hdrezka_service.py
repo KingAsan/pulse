@@ -254,6 +254,55 @@ class HdRezkaService:
 
         return result
 
+
+    def get_seasons(self, url):
+        """Extract list of seasons and episodes for a series from HDRezka page."""
+        soup = self._get(url)
+        if not soup:
+            return []
+
+        seasons = {}
+        
+        # Parse all initCDNSeriesEvents calls to get season/episode info
+        for script in soup.select('script'):
+            text = script.get_text()
+            # Find all initCDNSeriesEvents calls
+            matches = re.finditer(
+                r'initCDNSeriesEvents\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)',
+                text
+            )
+            for match in matches:
+                post_id = match.group(1)
+                translator_id = match.group(2)
+                season = int(match.group(3))
+                episode = int(match.group(4))
+                
+                if season not in seasons:
+                    seasons[season] = []
+                
+                # Only add if not already present
+                if not any(ep['episode'] == episode for ep in seasons[season]):
+                    seasons[season].append({
+                        'episode': episode,
+                        'name': f'Эпизод {episode}',
+                    })
+
+        # Sort episodes within each season
+        for season in seasons:
+            seasons[season].sort(key=lambda x: x['episode'])
+
+        # Convert to list format
+        result = []
+        for season_num in sorted(seasons.keys()):
+            result.append({
+                'season': season_num,
+                'name': f'Сезон {season_num}',
+                'episodes': seasons[season_num],
+            })
+
+        return result
+
+
     def get_categories(self):
         """Get main category pages from the site."""
         return [

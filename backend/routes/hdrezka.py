@@ -91,11 +91,36 @@ def categories():
         return jsonify({'error': 'Service temporarily unavailable'}), 503
 
 
+@hdrezka_bp.route('/seasons')
+@require_admin
+def seasons():
+    """Get list of seasons and episodes for a series."""
+    url = request.args.get('url', '')
+    if not url or not url.startswith('http'):
+        return jsonify({'error': 'Valid url parameter required'}), 400
+    try:
+        result = hdrezka_service.get_seasons(url)
+        return jsonify({'seasons': result})
+    except Exception as e:
+        logger.exception('HDRezka seasons error: url=%s', url)
+        return jsonify({'error': 'Service temporarily unavailable'}), 503
+
+
 @hdrezka_bp.route('/streams')
 @require_admin
 def streams():
-    """Get voice tracks with direct HLS URLs from cinemar.cc embed."""
+    """Get voice tracks with direct HLS URLs from cinemar.cc embed.
+    
+    Optional parameters:
+    - translator_id: voice track ID (for series with multiple translators)
+    - season: season number (for series)
+    - episode: episode number (for series)
+    """
     embed_url = request.args.get('embed_url', '')
+    translator_id = request.args.get('translator_id', '')
+    season = request.args.get('season', '')
+    episode = request.args.get('episode', '')
+    
     if not embed_url:
         return jsonify({'error': 'embed_url parameter required'}), 400
 

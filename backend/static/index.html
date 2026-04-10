@@ -4124,6 +4124,10 @@ function CinemaPage({ navigate }) {
   const [voiceTracks, setVoiceTracks] = useState([]);
   const [activeTrack, setActiveTrack] = useState(null);
   const [streamsLoading, setStreamsLoading] = useState(false);
+  // Season/episode state for series
+  const [seasons, setSeasons] = useState([]);
+  const [selectedSeason, setSelectedSeason] = useState(0);
+  const [selectedEpisode, setSelectedEpisode] = useState(0);
 
   if (!user || !user.is_admin) return <div className="container" style={{paddingTop:100}}><div className="empty-state"><div className="empty-icon"><i className="ri-shield-star-line"></i></div><h3>{t('adminRequired')}</h3><button className="btn btn-primary" onClick={()=>navigate('/')} style={{marginTop:16}}>{t('goHome')}</button></div></div>;
 
@@ -4151,6 +4155,20 @@ function CinemaPage({ navigate }) {
       .finally(() => setLoading(false));
   };
 
+  const loadStreams = (embedUrl) => {
+    if (!embedUrl) return;
+    setStreamsLoading(true);
+    api.get('/api/hdrezka/streams?embed_url=' + encodeURIComponent(embedUrl))
+      .then(r => {
+        if (r.tracks && r.tracks.length > 0) {
+          setVoiceTracks(r.tracks);
+          setActiveTrack(r.tracks[0]);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setStreamsLoading(false));
+  };
+
   const openDetail = (url) => {
     setDetailLoading(true);
     setView('detail');
@@ -4158,20 +4176,27 @@ function CinemaPage({ navigate }) {
     setVoiceTracks([]);
     setActiveTrack(null);
     setStreamsLoading(false);
+    setSeasons([]);
+    setSelectedSeason(0);
+    setSelectedEpisode(0);
     api.get('/api/hdrezka/detail?url=' + encodeURIComponent(url))
       .then(d => {
         setDetail(d);
-        if (d.player_url) {
-          setStreamsLoading(true);
-          api.get('/api/hdrezka/streams?embed_url=' + encodeURIComponent(d.player_url))
-            .then(r => {
-              if (r.tracks && r.tracks.length > 0) {
-                setVoiceTracks(r.tracks);
-                setActiveTrack(r.tracks[0]);
+        // Load seasons for series
+        if (d.content_type === 'series' || d.content_type === 'cartoon' || d.content_type === 'anime') {
+          api.get('/api/hdrezka/seasons?url=' + encodeURIComponent(url))
+            .then(s => {
+              if (s.seasons && s.seasons.length > 0) {
+                setSeasons(s.seasons);
+                setSelectedSeason(0);
+                setSelectedEpisode(0);
               }
             })
-            .catch(() => {})
-            .finally(() => setStreamsLoading(false));
+            .catch(() => {});
+        }
+        // Load streams
+        if (d.player_url) {
+          loadStreams(d.player_url);
         }
       })
       .catch(() => { toast.addToast('Failed to load details', 'error'); setView('browse'); })
@@ -4180,7 +4205,37 @@ function CinemaPage({ navigate }) {
 
   const selectTrack = (track) => { setActiveTrack(track); };
 
-  const goBack = () => { setView('browse'); setDetail(null); setVoiceTracks([]); setActiveTrack(null); setStreamsLoading(false); };
+  const handleSeasonChange = (seasonIdx) => {
+    setSelectedSeason(seasonIdx);
+    setSelectedEpisode(0);
+    // Reload streams for first episode of new season
+    if (seasons[seasonIdx] && seasons[seasonIdx].episodes && seasons[seasonIdx].episodes.length > 0) {
+      const ep = seasons[seasonIdx].episodes[0];
+      // For now, just reload with same embed (HDRezka handles season/episode via JS)
+      if (detail && detail.player_url) {
+        loadStreams(detail.player_url);
+      }
+    }
+  };
+
+  const handleEpisodeChange = (episodeIdx) => {
+    setSelectedEpisode(episodeIdx);
+    // Reload streams for selected episode
+    if (detail && detail.player_url) {
+      loadStreams(detail.player_url);
+    }
+  };
+
+  const goBack = () => {
+    setView('browse');
+    setDetail(null);
+    setVoiceTracks([]);
+    setActiveTrack(null);
+    setStreamsLoading(false);
+    setSeasons([]);
+    setSelectedSeason(0);
+    setSelectedEpisode(0);
+  };
 
   const changeCat = (cat) => { setActiveCat(cat); setPage(1); setItems([]); setView('browse'); };
 
@@ -4206,6 +4261,33 @@ function CinemaPage({ navigate }) {
               {detail.description && <div className="cinema-description">{detail.description}</div>}
               <div className="cinema-player-section">
                 <div className="cinema-player-header"><i className="ri-play-circle-fill"></i> Плеер</div>
+                {/* Season selector */}
+                {seasons.length > 1 && (
+                  <div className="cinema-season-select" style={{marginBottom:12,display:'flex',gap:8,flexWrap:'wrap',alignItems:'center'}}>
+                    <span style={{fontSize:'.85rem',color:'var(--text-secondary)'}}><i className="ri-stack-line"></i> Сезон:</span>
+                    {seasons.map((s, idx) => (
+                      <button key={s.season} className={`cinema-season-btn ${selectedSeason === idx ? 'active' : ''}`}
+                        onClick={() => handleSeasonChange(idx)}
+                        style={{padding:'6px 14px',borderRadius:8,border:'1px solid var(--border-color)',background:selectedSeason === idx ? 'var(--accent-gradient)' : 'var(--bg-tertiary)',color:selectedSeason === idx ? '#fff' : 'var(--text-secondary)',cursor:'pointer',fontSize:'.85rem',transition:'all .2s'}}>
+                        {s.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Episode selector */}
+                {seasons.length > 0 && seasons[selectedSeason]?.episodes?.length > 1 && (
+                  <div className="cinema-episode-select" style={{marginBottom:12,display:'flex',gap:6,flexWrap:'wrap',alignItems:'center',maxHeight:120,overflowY:'auto'}}>
+                    <span style={{fontSize:'.85rem',color:'var(--text-secondary)'}}><i className="ri-list-check"></i> Серия:</span>
+                    {seasons[selectedSeason].episodes.map((ep, idx) => (
+                      <button key={ep.episode} className={`cinema-episode-btn ${selectedEpisode === idx ? 'active' : ''}`}
+                        onClick={() => handleEpisodeChange(idx)}
+                        style={{padding:'4px 10px',borderRadius:6,border:'1px solid var(--border-color)',background:selectedEpisode === idx ? 'var(--accent-primary)' : 'var(--bg-tertiary)',color:selectedEpisode === idx ? '#fff' : 'var(--text-secondary)',cursor:'pointer',fontSize:'.8rem',transition:'all .2s',minWidth:36}}>
+                        {ep.episode}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                {/* Translator/voice selector */}
                 {voiceTracks.length > 1 && (
                   <div className="cinema-translator-select">
                     {voiceTracks.map(tr => (
@@ -4220,7 +4302,7 @@ function CinemaPage({ navigate }) {
                 {streamsLoading ? (
                   <div className="cinema-player"><div className="cinema-loading-player"><div className="spinner"></div></div></div>
                 ) : activeTrack ? (
-                  <CinemaPlayer key={activeTrack.voice_id} hlsUrl={activeTrack.hls_url} />
+                  <CinemaPlayer key={activeTrack.voice_id + '-' + selectedSeason + '-' + selectedEpisode} hlsUrl={activeTrack.hls_url} />
                 ) : detail.player_url ? (
                   <div className="cinema-no-player"><div className="cinema-no-player-icon"><i className="ri-loader-4-line"></i></div><p>Загрузка потоков...</p></div>
                 ) : (
