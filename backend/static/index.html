@@ -4114,7 +4114,6 @@ function CinemaPage({ navigate }) {
   const toast = useToast();
   const [view, setView] = useState('browse');
   const [categories, setCategories] = useState([]);
-  const [activeTab, setActiveTab] = useState('movies');
   const [activeCat, setActiveCat] = useState('films');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(false);
@@ -4125,58 +4124,44 @@ function CinemaPage({ navigate }) {
   const [voiceTracks, setVoiceTracks] = useState([]);
   const [activeTrack, setActiveTrack] = useState(null);
   const [streamsLoading, setStreamsLoading] = useState(false);
-  const [detailSource, setDetailSource] = useState('hdrezka');
 
   if (!user || !user.is_admin) return <div className="container" style={{paddingTop:100}}><div className="empty-state"><div className="empty-icon"><i className="ri-shield-star-line"></i></div><h3>{t('adminRequired')}</h3><button className="btn btn-primary" onClick={()=>navigate('/')} style={{marginTop:16}}>{t('goHome')}</button></div></div>;
 
   useEffect(() => {
-    if (activeTab === 'movies') {
-      api.get('/api/hdrezka/categories').then(setCategories).catch(() => {});
-    }
-  }, [activeTab]);
+    api.get('/api/hdrezka/categories').then(setCategories).catch(() => {});
+  }, []);
 
   useEffect(() => {
     if (view !== 'browse') return;
     setLoading(true);
-    const browseRequest = activeTab === 'anime'
-      ? api.get(`/api/anilibria/browse?page=${page}&limit=20`)
-      : api.get(`/api/hdrezka/browse?category=${activeCat}&page=${page}`);
-    browseRequest
+    api.get(`/api/hdrezka/browse?category=${activeCat}&page=${page}`)
       .then(d => { setItems(page === 1 ? d : [...items, ...d]); })
       .catch(() => toast.addToast('Failed to load', 'error'))
       .finally(() => setLoading(false));
-  }, [activeTab, activeCat, page, view]);
+  }, [activeCat, page, view]);
 
   const handleSearch = (e) => {
     e.preventDefault();
     if (!query.trim()) return;
     setView('search');
     setLoading(true);
-    const searchRequest = activeTab === 'anime'
-      ? api.get('/api/anilibria/search?q=' + encodeURIComponent(query.trim()))
-      : api.get('/api/hdrezka/search?q=' + encodeURIComponent(query.trim()));
-    searchRequest
+    api.get('/api/hdrezka/search?q=' + encodeURIComponent(query.trim()))
       .then(d => setItems(d))
       .catch(() => toast.addToast('Search failed', 'error'))
       .finally(() => setLoading(false));
   };
 
   const openDetail = (url) => {
-    const source = activeTab === 'anime' ? 'anilibria' : 'hdrezka';
     setDetailLoading(true);
     setView('detail');
     setDetail(null);
     setVoiceTracks([]);
     setActiveTrack(null);
     setStreamsLoading(false);
-    setDetailSource(source);
-    const detailRequest = source === 'anilibria'
-      ? api.get('/api/anilibria/detail?code=' + encodeURIComponent(url))
-      : api.get('/api/hdrezka/detail?url=' + encodeURIComponent(url));
-    detailRequest
+    api.get('/api/hdrezka/detail?url=' + encodeURIComponent(url))
       .then(d => {
         setDetail(d);
-        if (source === 'hdrezka' && d.player_url) {
+        if (d.player_url) {
           setStreamsLoading(true);
           api.get('/api/hdrezka/streams?embed_url=' + encodeURIComponent(d.player_url))
             .then(r => {
@@ -4195,17 +4180,9 @@ function CinemaPage({ navigate }) {
 
   const selectTrack = (track) => { setActiveTrack(track); };
 
-  const goBack = () => { setView('browse'); setDetail(null); setVoiceTracks([]); setActiveTrack(null); setStreamsLoading(false); setDetailSource('hdrezka'); };
+  const goBack = () => { setView('browse'); setDetail(null); setVoiceTracks([]); setActiveTrack(null); setStreamsLoading(false); };
 
   const changeCat = (cat) => { setActiveCat(cat); setPage(1); setItems([]); setView('browse'); };
-
-  const categoryTabs = useMemo(() => {
-    const tabs = [...categories];
-    if (!tabs.some(c => c.id === 'anime')) {
-      tabs.push({ id: 'anime', name: 'Аниме' });
-    }
-    return tabs;
-  }, [categories]);
 
   if (view === 'detail') {
     return (
@@ -4244,7 +4221,7 @@ function CinemaPage({ navigate }) {
                   <div className="cinema-player"><div className="cinema-loading-player"><div className="spinner"></div></div></div>
                 ) : activeTrack ? (
                   <CinemaPlayer key={activeTrack.voice_id} hlsUrl={activeTrack.hls_url} />
-                ) : detail.player_url && detailSource === 'hdrezka' ? (
+                ) : detail.player_url ? (
                   <div className="cinema-no-player"><div className="cinema-no-player-icon"><i className="ri-loader-4-line"></i></div><p>Загрузка потоков...</p></div>
                 ) : (
                   <div className="cinema-no-player"><div className="cinema-no-player-icon"><i className="ri-movie-2-line"></i></div><p>Плеер недоступен</p></div>
@@ -4278,7 +4255,7 @@ function CinemaPage({ navigate }) {
     <div className="container" style={{paddingTop:80}}>
       <div className="page-header">
         <div className="page-header-icon"><i className="ri-movie-2-line"></i><h1>Cinema</h1></div>
-        <p style={{color:'var(--text-muted)',marginTop:4}}>HDRezka + AniLibria — Администрирование</p>
+        <p style={{color:'var(--text-muted)',marginTop:4}}>HDRezka — Администрирование контента</p>
       </div>
       <form onSubmit={handleSearch} style={{display:'flex',gap:8,marginBottom:20}}>
         <input className="input" style={{flex:1}} placeholder="Поиск..." value={query} onChange={e => setQuery(e.target.value)} />
@@ -4286,9 +4263,7 @@ function CinemaPage({ navigate }) {
         {view === 'search' && <button className="btn btn-secondary" type="button" onClick={() => { setView('browse'); setPage(1); setItems([]); }}><i className="ri-arrow-left-line"></i> Browse</button>}
       </form>
       <div className="cinema-tabs">
-        <button className={`cinema-tab ${activeTab === 'movies' ? 'active' : ''}`} onClick={() => {setActiveTab('movies');setPage(1);setItems([]);setQuery('');setView('browse');}}><i className="ri-movie-2-line"></i> Кино</button>
-        <button className={`cinema-tab ${activeTab === 'anime' ? 'active' : ''}`} onClick={() => {setActiveTab('anime');setPage(1);setItems([]);setQuery('');setView('browse');}}><i className="ri-robot-2-line"></i> Аниме</button>
-        {activeTab === 'movies' && categoryTabs.map(c => {
+        {categories.map(c => {
           const normalizedId = c.id === 'films' ? 'filmy' : c.id === 'series' ? 'serialy' : c.id === 'cartoons' ? 'multfilmy' : c.id;
           const iconClass = c.id === 'films'
             ? 'ri-film-line'
