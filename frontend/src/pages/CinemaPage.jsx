@@ -1,7 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback } from 'react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
-import Hls from 'hls.js'
 import './CinemaPage.css'
 
 // Helper to decode unicode escapes like \u0414 -> Д
@@ -31,68 +30,8 @@ export default function CinemaPage() {
   const [voiceTracks, setVoiceTracks] = useState([])
   const [activeTrack, setActiveTrack] = useState(null)
   const [playerLoading, setPlayerLoading] = useState(false)
-  const videoRef = useRef(null)
-  const hlsRef = useRef(null)
 
   const isAdmin = user?.is_admin
-
-  // Cleanup HLS instance on unmount
-  useEffect(() => {
-    return () => {
-      if (hlsRef.current) {
-        hlsRef.current.destroy()
-      }
-    }
-  }, [])
-
-  // Initialize HLS player when activeTrack changes
-  useEffect(() => {
-    if (!activeTrack?.hls_url || !videoRef.current) return
-
-    // Destroy previous HLS instance
-    if (hlsRef.current) {
-      hlsRef.current.destroy()
-      hlsRef.current = null
-    }
-
-    const video = videoRef.current
-    const hlsUrl = activeTrack.hls_url
-
-    if (Hls.isSupported()) {
-      const hls = new Hls({
-        enableWorker: true,
-        lowLatencyMode: true,
-      })
-      hlsRef.current = hls
-      hls.loadSource(hlsUrl)
-      hls.attachMedia(video)
-      hls.on(Hls.Events.MANIFEST_PARSED, () => {
-        video.play().catch(err => console.log('Auto-play prevented:', err))
-      })
-      hls.on(Hls.Events.ERROR, (event, data) => {
-        console.error('HLS error:', data)
-        if (data.fatal) {
-          switch (data.type) {
-            case Hls.ErrorTypes.NETWORK_ERROR:
-              hls.startLoad()
-              break
-            case Hls.ErrorTypes.MEDIA_ERROR:
-              hls.recoverMediaError()
-              break
-            default:
-              hls.destroy()
-              break
-          }
-        }
-      })
-    } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
-      // Native HLS support (Safari)
-      video.src = hlsUrl
-      video.addEventListener('loadedmetadata', () => {
-        video.play().catch(err => console.log('Auto-play prevented:', err))
-      })
-    }
-  }, [activeTrack])
 
   // Load categories
   useEffect(() => {
@@ -124,12 +63,12 @@ export default function CinemaPage() {
   }, [query, isAdmin])
 
   // Load streams
-  const loadStreams = useCallback(async (embedUrl, translatorId = '', season = '', episode = '') => {
+  const loadStreams = useCallback(async (url, translatorId = '', season = '', episode = '') => {
     try {
-      const params = { embed_url: embedUrl }
+      // For HDRezka, we need to use embed URL from detail
+      // The iframe handles episode switching internally
+      const params = { embed_url: url }
       if (translatorId) params.translator_id = translatorId
-      if (season) params.season = season
-      if (episode) params.episode = episode
 
       const res = await api.get('/api/hdrezka/streams', { params })
       const tracks = res.data.tracks || []
@@ -167,7 +106,11 @@ export default function CinemaPage() {
       }
 
       // Load streams for first episode
-      if (detailRes.data.player_url) {
+      if (detailRes.data.url) {
+        // For series, use AJAX API with url parameter
+        await loadStreams(detailRes.data.url, '', '1', '1')
+      } else if (detailRes.data.player_url) {
+        // For movies, use embed method
         await loadStreams(detailRes.data.player_url)
       }
     } catch (err) {
@@ -177,33 +120,20 @@ export default function CinemaPage() {
     }
   }, [isAdmin, loadStreams])
 
-  // Handle season change - reload streams
-  const handleSeasonChange = useCallback(async (seasonIndex) => {
+  // Handle season change - show info message (iframe handles switching internally)
+  const handleSeasonChange = useCallback((seasonIndex) => {
     setSelectedSeason(seasonIndex)
     setSelectedEpisode(0)
-    
-    // Reload streams for new season
-    if (detail?.player_url) {
-      setPlayerLoading(true)
-      // Season numbers are 1-indexed
-      await loadStreams(detail.player_url, '', String(seasonIndex + 1), '1')
-      setPlayerLoading(false)
-    }
-  }, [detail, loadStreams])
+    // Note: HDRezka iframe handles episode switching internally
+    // User needs to use the player controls to switch episodes
+  }, [])
 
-  // Handle episode change - reload streams
-  const handleEpisodeChange = useCallback(async (episodeIndex) => {
+  // Handle episode change - show info message (iframe handles switching internally)
+  const handleEpisodeChange = useCallback((episodeIndex) => {
     setSelectedEpisode(episodeIndex)
-    
-    // Reload streams for new episode
-    if (detail?.player_url) {
-      setPlayerLoading(true)
-      const seasonNum = String(selectedSeason + 1)
-      const episodeNum = String(episodeIndex + 1)
-      await loadStreams(detail.player_url, '', seasonNum, episodeNum)
-      setPlayerLoading(false)
-    }
-  }, [detail, selectedSeason, loadStreams])
+    // Note: HDRezka iframe handles episode switching internally
+    // User needs to use the player controls to switch episodes
+  }, [])
 
   // Select voice track
   const selectTrack = useCallback((track) => {
@@ -374,7 +304,7 @@ export default function CinemaPage() {
               </div>
             )}
 
-            {/* Season & Episode Selection */}
+            {/* Season & Episode Info */}
             {seasons.length > 0 && (
               <div className="cinema-seasons-section">
                 <h3><i className="ri-list-check"></i> Сезоны и серии</h3>
@@ -384,26 +314,15 @@ export default function CinemaPage() {
                       key={idx}
                       className={`season-btn ${selectedSeason === idx ? 'active' : ''}`}
                       onClick={() => handleSeasonChange(idx)}
-                      disabled={playerLoading}
                     >
                       {season.name}
                     </button>
                   ))}
                 </div>
-                {seasons[selectedSeason] && seasons[selectedSeason].episodes && (
-                  <div className="episodes-list">
-                    {seasons[selectedSeason].episodes.slice(0, 24).map((ep, idx) => (
-                      <button
-                        key={idx}
-                        className={`episode-btn ${selectedEpisode === idx ? 'active' : ''}`}
-                        onClick={() => handleEpisodeChange(idx)}
-                        disabled={playerLoading}
-                      >
-                        {ep.name || `Эпизод ${ep.episode}`}
-                      </button>
-                    ))}
-                  </div>
-                )}
+                <p className="seasons-hint">
+                  <i className="ri-information-line"></i>
+                  Используйте плеер HDRezka для переключения серий
+                </p>
               </div>
             )}
 
@@ -436,25 +355,25 @@ export default function CinemaPage() {
               <div className="cinema-player-section">
                 <div className="player-header">
                   <h3><i className="ri-play-circle-line"></i> Плеер</h3>
-                  <span className="current-track">
-                    {decodeUnicodeEscapes(activeTrack.title)}
+                  <span className="player-hint">
+                    <i className="ri-information-line"></i>
+                    Для переключения серий используйте плеер HDRezka
                   </span>
                 </div>
                 <div className="cinema-player-wrapper">
                   {playerLoading ? (
                     <div className="player-loading">
                       <div className="spinner"></div>
-                      <p>Загрузка видео...</p>
+                      <p>Загрузка плеера...</p>
                     </div>
                   ) : (
-                    <video
-                      ref={videoRef}
-                      controls
-                      autoPlay
-                      className="cinema-player-video"
-                    >
-                      Ваш браузер не поддерживает видео
-                    </video>
+                    <iframe
+                      src={activeTrack.hls_url}
+                      allow="autoplay; encrypted-media; fullscreen"
+                      allowFullScreen
+                      className="cinema-player-iframe"
+                      title="Video Player"
+                    />
                   )}
                 </div>
               </div>
