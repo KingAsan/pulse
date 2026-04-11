@@ -125,17 +125,44 @@ def streams():
         return jsonify({'error': 'embed_url parameter required'}), 400
 
     try:
-        # Build embed URL with season/episode parameters if provided
-        final_embed_url = embed_url
-        if season and episode:
-            # For series, we need to construct URL with season/episode
-            # The embed URL format is: https://cinemar.cc/embed/{post_id}/{sig}
-            # We need to get the correct URL for the specific season/episode
-            pass
-
-        tracks = hdrezka_service.get_streams_from_embed(final_embed_url, translator_id, season, episode)
+        tracks = hdrezka_service.get_streams_from_embed(embed_url)
         if not tracks:
             return jsonify({'error': 'No streams found'}), 404
+
+        # Decode and clean track titles - handle all encoding formats
+        import codecs
+        from urllib.parse import unquote
+        for track in tracks:
+            title = track.get('title', '')
+            if title:
+                try:
+                    # Step 1: URL decode (%D0%94 -> Cyrillic)
+                    title = unquote(title)
+                    
+                    # Step 2: Handle double-escaped unicode (\\u0414 -> \u0414)
+                    title = title.replace('\\\\u', '\\u')
+                    
+                    # Step 3: Decode unicode escapes (\u0414 -> Д)
+                    if '\\u' in title:
+                        title = codecs.decode(title, 'unicode_escape')
+                    
+                    # Step 4: Clean up any remaining garbage
+                    # Remove any remaining backslash sequences
+                    title = re.sub(r'\\u[0-9a-fA-F]{4}', '', title)
+                    
+                    # Step 5: Clean HTML tags
+                    title = re.sub(r'<[^>]+>', '', title)
+                    
+                    # Step 6: Clean up extra whitespace
+                    title = ' '.join(title.split())
+                    
+                    track['title'] = title
+                except Exception as e:
+                    logger.warning(f'Error decoding title: {e}')
+                    # Fallback: just clean HTML
+                    title = re.sub(r'<[^>]+>', '', title)
+                    track['title'] = title
+
         # Replace direct cinemap URLs with proxied URLs
         for track in tracks:
             hls_url = track.get('hls_url', '')
