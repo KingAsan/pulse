@@ -109,120 +109,40 @@ def seasons():
 @hdrezka_bp.route('/streams')
 @require_admin
 def streams():
-    """Get video stream for specific season/episode via HDRezka AJAX API.
-    
-    This uses the correct method from HdRezkaApi library to get 
-    episode-specific video streams.
-    
-    Parameters:
-    - url: HDRezka page URL (required)
-    - translator_id: voice track ID (optional)
-    - season: season number (required for series)
-    - episode: episode number (required for series)
+    """Get voice tracks with direct HLS URLs from cinemar.cc embed.
+
+    Optional parameters:
+    - translator_id: voice track ID (for series with multiple translators)
+    - season: season number (for series)
+    - episode: episode number (for series)
     """
-    url = request.args.get('url', '')
+    embed_url = request.args.get('embed_url', '')
     translator_id = request.args.get('translator_id', '')
     season = request.args.get('season', '')
     episode = request.args.get('episode', '')
 
-    if not url:
-        return jsonify({'error': 'url parameter required'}), 400
+    if not embed_url:
+        return jsonify({'error': 'embed_url parameter required'}), 400
 
     try:
-        # For series with season/episode, use AJAX API
+        # Build embed URL with season/episode parameters if provided
+        final_embed_url = embed_url
         if season and episode:
-            result = hdrezka_service.get_episode_stream(url, season, episode, translator_id)
-            if not result:
-                return jsonify({'error': 'No stream found'}), 404
-            
-            # Return single video URL
-            video_url = result.get('url', '')
-            if not video_url:
-                return jsonify({'error': 'No video URL'}), 404
-            
-            # Parse quality URLs from the decoded response
-            # Format: "quality[url1 or url2],quality[url1 or url2]"
-            tracks = []
-            quality_parts = video_url.split(',')
-            for part in quality_parts:
-                if '[' in part and ']' in part:
-                    quality = part.split('[')[0].strip()
-                    urls = part.split('[')[1].split(']')[0].split(' or ')
-                    for video_url_item in urls:
-                        if video_url_item.strip().endswith('.mp4'):
-                            # Sign the URL for proxy
-                            sig = _sign_embed_url(video_url_item.strip())
-                            proxy_url = f'/api/hdrezka/hls_proxy?url={quote(video_url_item.strip())}&sig={sig}'
-                            
-                            tracks.append({
-                                'voice_id': translator_id or 'default',
-                                'title': f'{quality}p',
-                                'hls_url': proxy_url,
-                                'has_quality': True,
-                                'quality': quality
-                            })
-            
-            if not tracks:
-                # Fallback: return raw URL
-                sig = _sign_embed_url(video_url)
-                proxy_url = f'/api/hdrezka/hls_proxy?url={quote(video_url)}&sig={sig}'
-                tracks.append({
-                    'voice_id': translator_id or 'default',
-                    'title': 'Video',
-                    'hls_url': proxy_url,
-                    'has_quality': False
-                })
-            
-            return jsonify({'tracks': tracks})
-        else:
-            # For movies or when no season/episode specified, use embed method
-            embed_url = request.args.get('embed_url', '')
-            if not embed_url:
-                return jsonify({'error': 'embed_url or (url + season + episode) required'}), 400
-            
-            tracks = hdrezka_service.get_streams_from_embed(embed_url)
-            if not tracks:
-                return jsonify({'error': 'No streams found'}), 404
+            # For series, we need to construct URL with season/episode
+            # The embed URL format is: https://cinemar.cc/embed/{post_id}/{sig}
+            # We need to get the correct URL for the specific season/episode
+            pass
 
-            # Decode and clean track titles - handle all encoding formats
-            import codecs
-            from urllib.parse import unquote
-            for track in tracks:
-                title = track.get('title', '')
-                if title:
-                    try:
-                        # Step 1: URL decode (%D0%94 -> Cyrillic)
-                        title = unquote(title)
-                        
-                        # Step 2: Handle double-escaped unicode (\\u0414 -> \u0414)
-                        title = title.replace('\\\\u', '\\u')
-                        
-                        # Step 3: Decode unicode escapes (\u0414 -> Д)
-                        if '\\u' in title:
-                            title = codecs.decode(title, 'unicode_escape')
-                        
-                        # Step 4: Clean up any remaining garbage
-                        title = re.sub(r'\\u[0-9a-fA-F]{4}', '', title)
-                        
-                        # Step 5: Clean HTML tags
-                        title = re.sub(r'<[^>]+>', '', title)
-                        
-                        # Step 6: Clean up extra whitespace
-                        title = ' '.join(title.split())
-                        
-                        track['title'] = title
-                    except Exception as e:
-                        logger.warning(f'Error decoding title: {e}')
-                        title = re.sub(r'<[^>]+>', '', title)
-                        track['title'] = title
-
-            # Replace direct cinemap URLs with proxied URLs
-            for track in tracks:
-                hls_url = track.get('hls_url', '')
-                if hls_url:
-                    sig = _sign_embed_url(hls_url)
-                    track['hls_url'] = f'/api/hdrezka/hls_proxy?url={quote(hls_url)}&sig={sig}'
-            return jsonify({'tracks': tracks})
+        tracks = hdrezka_service.get_streams_from_embed(final_embed_url, translator_id, season, episode)
+        if not tracks:
+            return jsonify({'error': 'No streams found'}), 404
+        # Replace direct cinemap URLs with proxied URLs
+        for track in tracks:
+            hls_url = track.get('hls_url', '')
+            if hls_url:
+                sig = _sign_embed_url(hls_url)
+                track['hls_url'] = f'/api/hdrezka/hls_proxy?url={quote(hls_url)}&sig={sig}'
+        return jsonify({'tracks': tracks})
     except Exception as e:
         logger.exception('HDRezka streams error')
         return jsonify({'error': 'Service temporarily unavailable'}), 503

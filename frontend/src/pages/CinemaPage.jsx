@@ -3,18 +3,6 @@ import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import './CinemaPage.css'
 
-// Helper to decode unicode escapes like \u0414 -> Д
-const decodeUnicodeEscapes = (str) => {
-  if (!str) return ''
-  try {
-    return str.replace(/\\u([0-9a-fA-F]{4})/g, (match, grp) => 
-      String.fromCharCode(parseInt(grp, 16))
-    )
-  } catch {
-    return str
-  }
-}
-
 export default function CinemaPage() {
   const { user } = useAuth()
   const [activeCategory, setActiveCategory] = useState('films')
@@ -26,8 +14,6 @@ export default function CinemaPage() {
   const [detail, setDetail] = useState(null)
   const [seasons, setSeasons] = useState([])
   const [selectedSeason, setSelectedSeason] = useState(0)
-  const [selectedEpisode, setSelectedEpisode] = useState(0)
-  const [voiceTracks, setVoiceTracks] = useState([])
   const [activeTrack, setActiveTrack] = useState(null)
   const [playerLoading, setPlayerLoading] = useState(false)
 
@@ -62,27 +48,6 @@ export default function CinemaPage() {
       .finally(() => setLoading(false))
   }, [query, isAdmin])
 
-  // Load streams
-  const loadStreams = useCallback(async (url, translatorId = '', season = '', episode = '') => {
-    try {
-      // For HDRezka, we need to use embed URL from detail
-      // The iframe handles episode switching internally
-      const params = { embed_url: url }
-      if (translatorId) params.translator_id = translatorId
-
-      const res = await api.get('/api/hdrezka/streams', { params })
-      const tracks = res.data.tracks || []
-      setVoiceTracks(tracks)
-      if (tracks.length > 0) {
-        setActiveTrack(tracks[0])
-      }
-      return tracks
-    } catch (err) {
-      console.error('Error loading streams:', err)
-      return []
-    }
-  }, [])
-
   // Get detail
   const handleClick = useCallback(async (item) => {
     if (!isAdmin) return
@@ -90,8 +55,6 @@ export default function CinemaPage() {
     setDetail(null)
     setSeasons([])
     setSelectedSeason(0)
-    setSelectedEpisode(0)
-    setVoiceTracks([])
     setActiveTrack(null)
     setPlayerLoading(true)
 
@@ -105,39 +68,26 @@ export default function CinemaPage() {
         setSeasons(seasonsRes.data.seasons || [])
       }
 
-      // Load streams for first episode
-      if (detailRes.data.url) {
-        // For series, use AJAX API with url parameter
-        await loadStreams(detailRes.data.url, '', '1', '1')
-      } else if (detailRes.data.player_url) {
-        // For movies, use embed method
-        await loadStreams(detailRes.data.player_url)
+      // Use embed proxy for iframe player
+      if (detailRes.data.player_url && detailRes.data.embed_sig) {
+        const proxyUrl = `/api/hdrezka/embed?url=${encodeURIComponent(detailRes.data.player_url)}&sig=${detailRes.data.embed_sig}`
+        setActiveTrack({
+          voice_id: 'default',
+          title: 'HDRezka Player',
+          hls_url: proxyUrl,
+          has_quality: true,
+        })
       }
     } catch (err) {
       console.error('Error loading detail:', err)
     } finally {
       setPlayerLoading(false)
     }
-  }, [isAdmin, loadStreams])
+  }, [isAdmin])
 
-  // Handle season change - show info message (iframe handles switching internally)
+  // Handle season change
   const handleSeasonChange = useCallback((seasonIndex) => {
     setSelectedSeason(seasonIndex)
-    setSelectedEpisode(0)
-    // Note: HDRezka iframe handles episode switching internally
-    // User needs to use the player controls to switch episodes
-  }, [])
-
-  // Handle episode change - show info message (iframe handles switching internally)
-  const handleEpisodeChange = useCallback((episodeIndex) => {
-    setSelectedEpisode(episodeIndex)
-    // Note: HDRezka iframe handles episode switching internally
-    // User needs to use the player controls to switch episodes
-  }, [])
-
-  // Select voice track
-  const selectTrack = useCallback((track) => {
-    setActiveTrack(track)
   }, [])
 
   // Close detail view
@@ -146,8 +96,6 @@ export default function CinemaPage() {
     setDetail(null)
     setSeasons([])
     setSelectedSeason(0)
-    setSelectedEpisode(0)
-    setVoiceTracks([])
     setActiveTrack(null)
   }, [])
 
@@ -304,10 +252,10 @@ export default function CinemaPage() {
               </div>
             )}
 
-            {/* Season & Episode Info */}
+            {/* Season Info */}
             {seasons.length > 0 && (
               <div className="cinema-seasons-section">
-                <h3><i className="ri-list-check"></i> Сезоны и серии</h3>
+                <h3><i className="ri-list-check"></i> Сезоны</h3>
                 <div className="seasons-tabs">
                   {seasons.map((season, idx) => (
                     <button
@@ -321,32 +269,8 @@ export default function CinemaPage() {
                 </div>
                 <p className="seasons-hint">
                   <i className="ri-information-line"></i>
-                  Используйте плеер HDRezka для переключения серий
+                  Переключайте серии внутри плеера HDRezka
                 </p>
-              </div>
-            )}
-
-            {/* Voice Track Selection */}
-            {voiceTracks.length > 0 && (
-              <div className="cinema-voice-section">
-                <h3><i className="ri-mic-line"></i> Озвучка</h3>
-                <div className="voice-tracks-list">
-                  {voiceTracks.map((track, idx) => {
-                    // Decode unicode escapes on frontend
-                    const decodedTitle = decodeUnicodeEscapes(track.title)
-                    
-                    return (
-                      <button
-                        key={idx}
-                        className={`voice-btn ${activeTrack?.voice_id === track.voice_id ? 'active' : ''}`}
-                        onClick={() => selectTrack(track)}
-                      >
-                        {decodedTitle}
-                        {track.has_quality && <span className="hd-badge">HD</span>}
-                      </button>
-                    )
-                  })}
-                </div>
               </div>
             )}
 
@@ -355,10 +279,6 @@ export default function CinemaPage() {
               <div className="cinema-player-section">
                 <div className="player-header">
                   <h3><i className="ri-play-circle-line"></i> Плеер</h3>
-                  <span className="player-hint">
-                    <i className="ri-information-line"></i>
-                    Для переключения серий используйте плеер HDRezka
-                  </span>
                 </div>
                 <div className="cinema-player-wrapper">
                   {playerLoading ? (
