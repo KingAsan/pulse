@@ -56,22 +56,6 @@ export default function CinemaPage() {
       .finally(() => setLoading(false))
   }, [query, isAdmin])
 
-  // Load streams
-  const loadStreams = useCallback(async (embedUrl) => {
-    try {
-      const res = await api.get(`/api/hdrezka/streams?embed_url=${encodeURIComponent(embedUrl)}`)
-      const tracks = res.data.tracks || []
-      setVoiceTracks(tracks)
-      if (tracks.length > 0) {
-        setActiveTrack(tracks[0])
-      }
-      return tracks
-    } catch (err) {
-      console.error('Error loading streams:', err)
-      return []
-    }
-  }, [])
-
   // Get detail
   const handleClick = useCallback(async (item) => {
     if (!isAdmin) return
@@ -94,36 +78,35 @@ export default function CinemaPage() {
         const seasonsRes = await api.get(`/api/hdrezka/seasons?url=${encodeURIComponent(item.url)}`)
         const seasonsData = seasonsRes.data.seasons || []
         setSeasons(seasonsData)
-        
-        // Load streams for first episode of first season
-        if (seasonsData.length > 0 && detailRes.data.player_url) {
-          await loadStreams(detailRes.data.player_url)
-        }
-      } else if (detailRes.data.player_url) {
-        // For movies, just load streams
-        await loadStreams(detailRes.data.player_url)
+      }
+
+      // Set player URL (embed URL handles season/episode switching internally)
+      if (detailRes.data.player_url && detailRes.data.embed_sig) {
+        // Use embed proxy endpoint which handles season/episode switching
+        const proxyUrl = `/api/hdrezka/embed?url=${encodeURIComponent(detailRes.data.player_url)}&sig=${detailRes.data.embed_sig}`
+        setActiveTrack({
+          voice_id: 'default',
+          title: 'HDRezka Player',
+          hls_url: proxyUrl,
+          has_quality: true,
+        })
       }
     } catch (err) {
       console.error('Error loading detail:', err)
     } finally {
       setPlayerLoading(false)
     }
-  }, [isAdmin, loadStreams])
+  }, [isAdmin])
 
-  // Handle season change
+  // Handle season change - no need to reload, iframe handles it
   const handleSeasonChange = useCallback((seasonIndex) => {
     setSelectedSeason(seasonIndex)
     setSelectedEpisode(0)
   }, [])
 
-  // Handle episode change
+  // Handle episode change - no need to reload, iframe handles it
   const handleEpisodeChange = useCallback((episodeIndex) => {
     setSelectedEpisode(episodeIndex)
-  }, [])
-
-  // Select voice track
-  const selectTrack = useCallback((track) => {
-    setActiveTrack(track)
   }, [])
 
   // Close detail view
@@ -294,6 +277,10 @@ export default function CinemaPage() {
             {seasons.length > 0 && (
               <div className="cinema-seasons-section">
                 <h3><i className="ri-list-check"></i> Сезоны и серии</h3>
+                <p className="seasons-hint">
+                  <i className="ri-information-line"></i> 
+                  Выберите сезон и серию, затем переключайте их прямо в плеере
+                </p>
                 <div className="seasons-tabs">
                   {seasons.map((season, idx) => (
                     <button
@@ -321,33 +308,15 @@ export default function CinemaPage() {
               </div>
             )}
 
-            {/* Voice Track Selection */}
-            {voiceTracks.length > 0 && (
-              <div className="cinema-voice-section">
-                <h3><i className="ri-mic-line"></i> Озвучка</h3>
-                <div className="voice-tracks-list">
-                  {voiceTracks.map((track, idx) => (
-                    <button
-                      key={idx}
-                      className={`voice-btn ${activeTrack?.voice_id === track.voice_id ? 'active' : ''}`}
-                      onClick={() => selectTrack(track)}
-                    >
-                      {track.title}
-                      {track.has_quality && <span className="hd-badge">HD</span>}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            )}
-
             {/* Player */}
             {activeTrack && (
               <div className="cinema-player-section">
                 <div className="player-header">
                   <h3><i className="ri-play-circle-line"></i> Плеер</h3>
-                  {activeTrack && (
-                    <span className="current-track">{activeTrack.title}</span>
-                  )}
+                  <span className="player-hint">
+                    <i className="ri-information-line"></i> 
+                    Для переключения серий используйте плеер
+                  </span>
                 </div>
                 <div className="cinema-player-wrapper">
                   {playerLoading ? (

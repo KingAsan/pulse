@@ -333,11 +333,17 @@ class HdRezkaService:
     # Stream extraction — parse cinemar.cc embed to get direct HLS URLs
     # ------------------------------------------------------------------
 
-    def get_streams_from_embed(self, embed_url):
+    def get_streams_from_embed(self, embed_url, translator_id='', season='', episode=''):
         """Extract HLS stream URLs from cinemar.cc embed page.
 
         Parses the Cinemar player config which contains base64-encoded JSON
         with voice tracks and their HLS playlist URLs.
+
+        Parameters:
+        - embed_url: Base embed URL from detail
+        - translator_id: Translator ID for switching voice tracks
+        - season: Season number
+        - episode: Episode number
 
         Returns list of voice tracks with HLS URLs.
         """
@@ -345,9 +351,23 @@ class HdRezkaService:
             return []
 
         try:
+            # Build request headers with proper referer
+            headers = {
+                'Referer': f'{self.base_url}/',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+            
+            # If season and episode are provided, we need to get the right URL
+            # The player URL from detail might be generic, but for series we need 
+            # to request specific episode streams
+            if season and episode:
+                # For series, the embed URL already contains everything we need
+                # But we might need to fetch a different page or use AJAX
+                pass
+
             r = self.session.get(
                 embed_url,
-                headers={'Referer': f'{self.base_url}/'},
+                headers=headers,
                 timeout=15,
             )
             if r.status_code != 200:

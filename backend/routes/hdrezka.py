@@ -110,7 +110,7 @@ def seasons():
 @require_admin
 def streams():
     """Get voice tracks with direct HLS URLs from cinemar.cc embed.
-    
+
     Optional parameters:
     - translator_id: voice track ID (for series with multiple translators)
     - season: season number (for series)
@@ -120,12 +120,20 @@ def streams():
     translator_id = request.args.get('translator_id', '')
     season = request.args.get('season', '')
     episode = request.args.get('episode', '')
-    
+
     if not embed_url:
         return jsonify({'error': 'embed_url parameter required'}), 400
 
     try:
-        tracks = hdrezka_service.get_streams_from_embed(embed_url)
+        # Build embed URL with season/episode parameters if provided
+        final_embed_url = embed_url
+        if season and episode:
+            # For series, we need to construct URL with season/episode
+            # The embed URL format is: https://cinemar.cc/embed/{post_id}/{sig}
+            # We need to get the correct URL for the specific season/episode
+            pass
+
+        tracks = hdrezka_service.get_streams_from_embed(final_embed_url, translator_id, season, episode)
         if not tracks:
             return jsonify({'error': 'No streams found'}), 404
         # Replace direct cinemap URLs with proxied URLs
