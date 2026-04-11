@@ -129,6 +129,19 @@ def streams():
         if not tracks:
             return jsonify({'error': 'No streams found'}), 404
 
+        # Decode unicode escapes in track titles (e.g., \u0414 -> Д)
+        import codecs
+        for track in tracks:
+            title = track.get('title', '')
+            if title:
+                try:
+                    # Replace double backslash with single for proper decoding
+                    title = title.replace('\\\\u', '\\u')
+                    # Decode unicode escape sequences
+                    track['title'] = codecs.decode(title, 'unicode_escape')
+                except Exception:
+                    pass
+
         # Replace direct cinemap URLs with proxied URLs
         for track in tracks:
             hls_url = track.get('hls_url', '')
