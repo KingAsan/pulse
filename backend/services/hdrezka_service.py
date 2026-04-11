@@ -262,11 +262,10 @@ class HdRezkaService:
             return []
 
         seasons = {}
-        
-        # Parse all initCDNSeriesEvents calls to get season/episode info
+
+        # Try to find initCDNSeriesEvents in scripts
         for script in soup.select('script'):
             text = script.get_text()
-            # Find all initCDNSeriesEvents calls
             matches = re.finditer(
                 r'initCDNSeriesEvents\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)',
                 text
@@ -276,16 +275,34 @@ class HdRezkaService:
                 translator_id = match.group(2)
                 season = int(match.group(3))
                 episode = int(match.group(4))
-                
+
                 if season not in seasons:
                     seasons[season] = []
-                
-                # Only add if not already present
+
                 if not any(ep['episode'] == episode for ep in seasons[season]):
                     seasons[season].append({
                         'episode': episode,
                         'name': f'Эпизод {episode}',
                     })
+
+        # If no seasons found from scripts, try to extract from title/meta
+        if not seasons:
+            # Look for season info in page title (e.g. "1-5 сезон")
+            if soup.title:
+                title_text = soup.title.get_text()
+                season_match = re.search(r'\((\d+)(?:-(\d+))?\s*сезон', title_text, re.IGNORECASE)
+                if season_match:
+                    start_season = int(season_match.group(1))
+                    end_season = int(season_match.group(2)) if season_match.group(2) else start_season
+                    
+                    for season_num in range(start_season, end_season + 1):
+                        seasons[season_num] = []
+                        # Default to 24 episodes per season (common for TV series)
+                        for ep_num in range(1, 25):
+                            seasons[season_num].append({
+                                'episode': ep_num,
+                                'name': f'Эпизод {ep_num}',
+                            })
 
         # Sort episodes within each season
         for season in seasons:
