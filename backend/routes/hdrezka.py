@@ -129,18 +129,39 @@ def streams():
         if not tracks:
             return jsonify({'error': 'No streams found'}), 404
 
-        # Decode unicode escapes in track titles (e.g., \u0414 -> Д)
+        # Decode and clean track titles - handle all encoding formats
         import codecs
+        from urllib.parse import unquote
         for track in tracks:
             title = track.get('title', '')
             if title:
                 try:
-                    # Replace double backslash with single for proper decoding
+                    # Step 1: URL decode (%D0%94 -> Cyrillic)
+                    title = unquote(title)
+                    
+                    # Step 2: Handle double-escaped unicode (\\u0414 -> \u0414)
                     title = title.replace('\\\\u', '\\u')
-                    # Decode unicode escape sequences
-                    track['title'] = codecs.decode(title, 'unicode_escape')
-                except Exception:
-                    pass
+                    
+                    # Step 3: Decode unicode escapes (\u0414 -> Д)
+                    if '\\u' in title:
+                        title = codecs.decode(title, 'unicode_escape')
+                    
+                    # Step 4: Clean up any remaining garbage
+                    # Remove any remaining backslash sequences
+                    title = re.sub(r'\\u[0-9a-fA-F]{4}', '', title)
+                    
+                    # Step 5: Clean HTML tags
+                    title = re.sub(r'<[^>]+>', '', title)
+                    
+                    # Step 6: Clean up extra whitespace
+                    title = ' '.join(title.split())
+                    
+                    track['title'] = title
+                except Exception as e:
+                    logger.warning(f'Error decoding title: {e}')
+                    # Fallback: just clean HTML
+                    title = re.sub(r'<[^>]+>', '', title)
+                    track['title'] = title
 
         # Replace direct cinemap URLs with proxied URLs
         for track in tracks:
