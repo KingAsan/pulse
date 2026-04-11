@@ -364,7 +364,7 @@ class HdRezkaService:
             # Truncate to valid base64 length (multiple of 4)
             b64_data = b64_data[:len(b64_data) - (len(b64_data) % 4)]
 
-            decoded = base64.b64decode(b64_data).decode('latin-1')
+            decoded = base64.b64decode(b64_data).decode('utf-8', errors='replace')
 
             # Parse the JSON array — fix escape issues first
             # Find the closing bracket of the array
@@ -406,12 +406,6 @@ class HdRezkaService:
                 voice_id = str(item.get('voice_id', ''))
                 title = item.get('title', '')
                 file_url = item.get('file', '').replace('\\/', '/')
-
-                # Decode Unicode escapes in title
-                try:
-                    title = title.encode('latin-1').decode('unicode_escape')
-                except Exception:
-                    pass
 
                 # Strip HTML tags from title (e.g. <img src="flags/jp.png">)
                 title = re.sub(r'<[^>]+>', '', title).strip()
