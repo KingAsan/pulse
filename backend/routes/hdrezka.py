@@ -125,17 +125,22 @@ def streams():
         return jsonify({'error': 'embed_url parameter required'}), 400
 
     try:
-        # Build embed URL with season/episode parameters if provided
-        final_embed_url = embed_url
-        if season and episode:
-            # For series, we need to construct URL with season/episode
-            # The embed URL format is: https://cinemar.cc/embed/{post_id}/{sig}
-            # We need to get the correct URL for the specific season/episode
-            pass
-
-        tracks = hdrezka_service.get_streams_from_embed(final_embed_url, translator_id, season, episode)
+        tracks = hdrezka_service.get_streams_from_embed(embed_url)
         if not tracks:
             return jsonify({'error': 'No streams found'}), 404
+
+        # Decode unicode escapes in track titles (e.g., \u0414 -> Д)
+        import codecs
+        for track in tracks:
+            title = track.get('title', '')
+            if title and '\\u' in title:
+                try:
+                    # Replace double backslash with single for proper decoding
+                    title = title.replace('\\\\u', '\\u')
+                    track['title'] = codecs.decode(title, 'unicode_escape')
+                except Exception:
+                    pass
+
         # Replace direct cinemap URLs with proxied URLs
         for track in tracks:
             hls_url = track.get('hls_url', '')
