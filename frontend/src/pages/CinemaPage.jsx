@@ -55,9 +55,22 @@ export default function CinemaPage() {
       }, 3000)
     }
 
+    const handleMouseLeave = () => {
+      setShowControls(false)
+      clearTimeout(controlsTimeoutRef.current)
+    }
+
+    // Show controls initially
+    setShowControls(true)
+    controlsTimeoutRef.current = setTimeout(() => {
+      setShowControls(false)
+    }, 3000)
+
     container.addEventListener('mousemove', handleMouseMove)
+    container.addEventListener('mouseleave', handleMouseLeave)
     return () => {
       container.removeEventListener('mousemove', handleMouseMove)
+      container.removeEventListener('mouseleave', handleMouseLeave)
       clearTimeout(controlsTimeoutRef.current)
     }
   }, [activeTrack])
