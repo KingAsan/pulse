@@ -1086,6 +1086,28 @@ body.cinema-mode-active .cinema-player-section {
   border: none;
   border-radius: 12px;
   background: #000;
+  position: relative;
+  z-index: 1;
+}
+
+/* Transparent overlay to capture mouse events (iframe blocks them) */
+.player-mouse-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  z-index: 10;
+  cursor: default;
+}
+
+.player-mouse-overlay.cursor-hidden {
+  cursor: none !important;
+}
+
+/* Ensure wrapper is relative for overlay positioning */
+.cinema-player-wrapper {
+  position: relative;
 }
 
 .player-external-link {

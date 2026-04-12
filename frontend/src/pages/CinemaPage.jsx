@@ -510,7 +510,17 @@ export default function CinemaPage() {
                   </div>
                 </div>
 
-                <div className="cinema-player-wrapper">
+                <div className="cinema-player-wrapper" 
+                     onMouseMove={() => {
+                       setShowControls(true)
+                       clearTimeout(controlsTimeoutRef.current)
+                       controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000)
+                     }}
+                     onMouseLeave={() => {
+                       setShowControls(false)
+                       clearTimeout(controlsTimeoutRef.current)
+                     }}
+                >
                   {playerLoading ? (
                     <div className="player-loading">
                       <div className="spinner"></div>
@@ -518,6 +528,36 @@ export default function CinemaPage() {
                     </div>
                   ) : detail.player_url && detail.embed_sig ? (
                     <>
+                      {/* Transparent overlay to capture mouse events (iframe blocks them) */}
+                      <div
+                        className={`player-mouse-overlay ${!showControls ? 'cursor-hidden' : ''}`}
+                        onMouseMove={(e) => {
+                          e.stopPropagation()
+                          setShowControls(true)
+                          clearTimeout(controlsTimeoutRef.current)
+                          controlsTimeoutRef.current = setTimeout(() => setShowControls(false), 3000)
+                        }}
+                        onMouseLeave={() => {
+                          setShowControls(false)
+                          clearTimeout(controlsTimeoutRef.current)
+                        }}
+                        onClick={(e) => {
+                          // Forward click to iframe by temporarily hiding overlay
+                          const overlay = e.currentTarget
+                          overlay.style.pointerEvents = 'none'
+                          const iframe = overlay.nextElementSibling
+                          if (iframe) {
+                            const rect = iframe.getBoundingClientRect()
+                            const x = e.clientX - rect.left
+                            const y = e.clientY - rect.top
+                            iframe.contentWindow?.postMessage({ type: 'click', x, y }, '*')
+                          }
+                          setTimeout(() => {
+                            overlay.style.pointerEvents = 'auto'
+                          }, 100)
+                        }}
+                      />
+
                       <iframe
                         src={`/api/hdrezka/embed?url=${encodeURIComponent(detail.player_url)}&sig=${detail.embed_sig}`}
                         allow="autoplay; encrypted-media; fullscreen; picture-in-picture"
