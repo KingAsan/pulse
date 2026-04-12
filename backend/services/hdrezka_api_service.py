@@ -1,399 +1,513 @@
-"""HDRezkaApi integration service — wraps HdRezkaApi library for Pulse backend."""
+"""HDRezka mirror parser — search, metadata, player embeds, and direct streams from tv.hdrezka.inc."""
 
 import logging
-from typing import Optional
-from urllib.parse import quote, urlparse
+import re
+import base64
 import time
-
-# Если VPN включён, HdRezkaApi работает напрямую
-# Иначе нужно настраивать прокси
-USE_DIRECT_ACCESS = True  # Установить False если VPN не работает
+import requests
+from itertools import product
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin, quote
 
 logger = logging.getLogger(__name__)
 
-# Базовый URL HDRezka (можно менять на актуальное зеркало)
-HDREZKA_BASE_URL = 'https://hdrezka.ag'
-
-# Маппинг категорий Pulse -> HDRezka URL paths
-CATEGORY_MAP = {
-    'films': 'films',
-    'series': 'series',
-    'cartoons': 'cartoons',
-    'anime': 'animation',
+MIRROR_URL = 'https://tv.hdrezka.inc'
+HEADERS = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 }
+TIMEOUT = 12
 
 
-class HdRezkaApiService:
-    """Service wrapper над HdRezkaApi для совместимости с Pulse backend.
-    
-    При включённом VPN работает напрямую с HDRezka.
-    """
-
-    def __init__(self, base_url: str = HDREZKA_BASE_URL):
+class HdRezkaService:
+    def __init__(self, base_url=MIRROR_URL):
         self.base_url = base_url.rstrip('/')
-        
-        # Импортируем HdRezkaApi напрямую (без monkeypatch)
-        from HdRezkaApi import HdRezkaApi, HdRezkaSearch
-        
-        self._search = HdRezkaSearch(self.base_url)
-        self._api_cache = {}  # Кэш для HdRezkaApi инстансов
-        
-        # Тестируем доступность
-        logger.info('HdRezkaApiService initialized with base URL: %s', self.base_url)
-        self._test_connection()
-    
-    def _test_connection(self):
-        """Тест соединения с HDRezka."""
+        self.session = requests.Session()
+        self.session.headers.update(HEADERS)
+
+    def _get(self, url):
         try:
-            import requests
-            start = time.time()
-            r = requests.get(self.base_url, timeout=10,
-                           headers={'User-Agent': 'Mozilla/5.0'})
-            elapsed = time.time() - start
-            if r.status_code == 200:
-                logger.info('✅ HDRezka connection OK (%.2fs)', elapsed)
-            else:
-                logger.warning('⚠️  HDRezka returned status %s (%.2fs)', r.status_code, elapsed)
+            r = self.session.get(url, timeout=TIMEOUT)
+            r.raise_for_status()
+            return BeautifulSoup(r.text, 'html.parser')
         except Exception as e:
-            logger.error('❌ HDRezka connection failed: %s', str(e)[:100])
-
-    def _normalize_url(self, url: str) -> str:
-        """Убедиться что URL использует правильный базовый домен."""
-        if not url:
-            return ''
-        # Заменить домен на текущий base_url если отличается
-        if self.base_url not in url:
-            from urllib.parse import urlparse
-            parsed = urlparse(url)
-            path = parsed.path
-            url = f'{self.base_url}{path}'
-        return url
-
-    def search(self, query: str, limit: int = 20) -> list:
-        """Поиск контента на HDRezka."""
-        try:
-            results = self._search(query)
-            if not results:
-                return []
-
-            normalized = []
-            for item in results[:limit]:
-                url = self._normalize_url(item.get('url', ''))
-                category = item.get('category')
-                content_type = 'movie'
-                if category:
-                    cat_str = str(category).split('.')[-1] if category else ''
-                    if cat_str in ('series', 'tv_series'):
-                        content_type = 'series'
-                    elif cat_str == 'cartoon':
-                        content_type = 'cartoon'
-                    elif cat_str == 'anime':
-                        content_type = 'anime'
-
-                normalized.append({
-                    'id': url.split('/')[-1].split('-')[0] if url else '',
-                    'title': item.get('title', ''),
-                    'url': url,
-                    'image': None,
-                    'type': content_type,
-                    'rating': item.get('rating'),
-                })
-            return normalized
-        except Exception as e:
-            logger.exception('HdRezkaApi search error: q=%s', query)
-            return []
-
-    def get_detail(self, url: str) -> Optional[dict]:
-        """Получить детальную информацию о фильме/сериале.
-
-        Returns:
-            dict: {'title', 'original_title', 'description', 'poster', 'year',
-                   'genres', 'country', 'imdb_rating', 'kp_rating', 'quality',
-                   'duration', 'translations', 'post_id', 'content_type',
-                   'translator_list', 'seasons_info', ...}
-        """
-        try:
-            url = self._normalize_url(url)
-            rezka = HdRezkaApi(url)
-
-            if not rezka.ok:
-                logger.warning('HdRezkaApi failed to fetch: %s', rezka.exception)
-                return None
-
-            # Определить тип контента
-            content_type = 'movie'
-            type_str = str(rezka.type).split('.')[-1] if rezka.type else ''
-            if type_str in ('tv_series', 'series'):
-                content_type = 'series'
-            elif str(rezka.category).split('.')[-1] == 'cartoon':
-                content_type = 'cartoon'
-            elif str(rezka.category).split('.')[-1] == 'anime':
-                content_type = 'anime'
-
-            # Получить информацию о сезонах для сериалов
-            seasons_info = []
-            translator_list = []
-
-            if content_type == 'series':
-                # Получить информацию о сезонах/эпизодах
-                try:
-                    episodes_info = rezka.episodesInfo
-                    for season_data in episodes_info:
-                        season_num = season_data['season']
-                        season_text = season_data['season_text']
-                        episodes = []
-                        for ep in season_data.get('episodes', []):
-                            episodes.append({
-                                'episode': ep['episode'],
-                                'name': ep.get('episode_text', f'Эпизод {ep["episode"]}'),
-                                'translations': ep.get('translations', []),
-                            })
-                        seasons_info.append({
-                            'season': season_num,
-                            'name': season_text,
-                            'episodes': episodes,
-                        })
-                except Exception as e:
-                    logger.warning('Failed to get episodes info: %s', e)
-
-            # Список переводчиков
-            for tr_id, tr_data in rezka.translators.items():
-                translator_list.append({
-                    'id': str(tr_id),
-                    'title': tr_data.get('name', ''),
-                    'premium': tr_data.get('premium', False),
-                })
-
-            # Получить genre/country/year из описания страницы
-            # HdRezkaApi не предоставляет это напрямую, парсим из soup
-            genres = []
-            country = ''
-            year = str(rezka.releaseYear) if rezka.releaseYear else None
-            quality = ''
-            duration = ''
-
-            try:
-                # Попробовать извлечь из b-post__info таблицы
-                info_table = rezka.soup.find(class_='b-post__info')
-                if info_table:
-                    for tr in info_table.find_all('tr'):
-                        cells = tr.find_all('td')
-                        if len(cells) >= 2:
-                            label = cells[0].get_text(strip=True).lower().rstrip(':')
-                            value = cells[1].get_text(strip=True)
-
-                            if 'жанр' in label or 'genre' in label:
-                                genres = [g.strip() for g in value.split(',') if g.strip()]
-                            elif 'страна' in label or 'country' in label:
-                                country = value.strip()
-                            elif 'качеств' in label or 'quality' in label:
-                                quality = value.strip()
-                            elif 'время' in label or 'длительност' in label or 'duration' in label:
-                                duration = value.strip()
-            except Exception as e:
-                logger.debug('Failed to parse info table: %s', e)
-
-            result = {
-                'url': url,
-                'title': rezka.name or '',
-                'original_title': rezka.origName or '',
-                'description': rezka.description or '',
-                'poster': rezka.thumbnailHQ or rezka.thumbnail,
-                'year': year,
-                'genres': genres,
-                'country': country,
-                'quality': quality,
-                'duration': duration,
-                'imdb_rating': rezka.rating.value if rezka.rating.value else None,
-                'kp_rating': None,  # HDRezka не всегда предоставляет KP рейтинг
-                'content_type': content_type,
-                'post_id': str(rezka.id),
-                'translator_list': translator_list,
-                'seasons_info': seasons_info,
-                'source_url': url,
-                'player_url': None,  # Стримы получаются через get_streams
-            }
-
-            return result
-        except Exception as e:
-            logger.exception('HdRezkaApi detail error: url=%s', url)
+            logger.exception('HdRezka request failed: %s', url)
             return None
 
-    def get_seasons(self, url: str) -> list:
-        """Получить список сезонов и эпизодов для сериала.
+    def _abs_url(self, path):
+        if not path or path.startswith('data:'):
+            return None
+        if path.startswith('http'):
+            return path
+        return urljoin(self.base_url + '/', path)
 
-        Returns:
-            List[dict]: [{'season', 'name', 'episodes': [{'episode', 'name', 'translations'}]}]
-        """
-        try:
-            url = self._normalize_url(url)
-            rezka = HdRezkaApi(url)
+    def search(self, query, limit=20):
+        """Search for movies/series on HDRezka mirror."""
+        url = f'{self.base_url}/search/?do=search&subaction=search&q={quote(query)}'
+        soup = self._get(url)
+        if not soup:
+            return []
 
-            if rezka.type != 'tv_series':
-                return []
+        results = []
+        for item in soup.select('.postItem')[:limit]:
+            try:
+                data_id = item.get('data-id', '')
+                cover = item.select_one('.postItem-cover')
+                link = cover.get('data-link', '') if cover else ''
+                img = item.select_one('img')
+                img_src = self._abs_url(img.get('data-src') or img.get('src')) if img else None
+                title_el = item.select_one('.postItem-title a, h3 a, a')
+                title = title_el.get_text(strip=True) if title_el else ''
 
-            result = []
-            for season_data in rezka.episodesInfo:
-                season_num = season_data['season']
-                season_text = season_data['season_text']
-                episodes = []
-                for ep in season_data.get('episodes', []):
-                    episodes.append({
-                        'episode': ep['episode'],
-                        'name': ep.get('episode_text', f'Эпизод {ep["episode"]}'),
-                        'translations': ep.get('translations', []),
-                    })
-                result.append({
-                    'season': season_num,
-                    'name': season_text,
-                    'episodes': episodes,
+                # Determine type from URL
+                content_type = 'movie'
+                if '/serialy/' in link:
+                    content_type = 'series'
+                elif '/multfilmy/' in link or '/multserial/' in link:
+                    content_type = 'cartoon'
+                elif '/anime/' in link:
+                    content_type = 'anime'
+
+                results.append({
+                    'id': data_id,
+                    'title': title,
+                    'url': link,
+                    'image': img_src,
+                    'type': content_type,
+                })
+            except Exception:
+                continue
+
+        return results
+
+    def get_detail(self, url):
+        """Get detailed info about a movie/series from its HDRezka page URL."""
+        soup = self._get(url)
+        if not soup:
+            return None
+
+        result = {'url': url}
+
+        # Title
+        h1 = soup.select_one('h1')
+        result['title'] = h1.get_text(strip=True) if h1 else ''
+
+        # Original title
+        alt = soup.select_one('.altName')
+        result['original_title'] = alt.get_text(strip=True) if alt else ''
+
+        # Poster
+        poster = soup.select_one('.posterBlock img, .postImg img')
+        if poster:
+            src = poster.get('data-src') or poster.get('src')
+            result['poster'] = self._abs_url(src)
+        else:
+            result['poster'] = None
+
+        # Info table
+        table = soup.select_one('table.post__info')
+        result['info'] = {}
+        result['imdb_rating'] = None
+        result['kp_rating'] = None
+        result['year'] = None
+        result['country'] = None
+        result['genres'] = []
+        result['quality'] = None
+        result['duration'] = None
+        result['translations'] = []
+
+        if table:
+            for row in table.select('tr'):
+                label_el = row.select_one('td.l')
+                value_el = row.select_one('td:not(.l)')
+                if not label_el or not value_el:
+                    continue
+                label = label_el.get_text(strip=True).rstrip(':').lower()
+                value = value_el.get_text(' ', strip=True)
+
+                if 'рейтинг' in label:
+                    imdb = value_el.select_one('.imdb .bold')
+                    kp = value_el.select_one('.kp .bold')
+                    if imdb:
+                        try:
+                            result['imdb_rating'] = float(imdb.get_text(strip=True))
+                        except ValueError:
+                            pass
+                    if kp:
+                        try:
+                            result['kp_rating'] = float(kp.get_text(strip=True))
+                        except ValueError:
+                            pass
+                elif 'дата выхода' in label or 'год' in label:
+                    result['year'] = value.strip()
+                elif 'страна' in label:
+                    result['country'] = value.strip()
+                elif 'жанр' in label:
+                    result['genres'] = [g.strip() for g in value.split(',') if g.strip()]
+                elif 'качеств' in label:
+                    result['quality'] = value.strip()
+                elif 'время' in label:
+                    result['duration'] = value.strip()
+                elif 'перевод' in label:
+                    result['translations'] = [t.strip() for t in value.split(',') if t.strip()]
+
+                result['info'][label] = value
+
+        # Description
+        desc_el = soup.select_one('.postDescription, .b-post__description_text, .story')
+        result['description'] = desc_el.get_text(strip=True) if desc_el else ''
+
+        # Extract post_id from page (data-id attribute or from init scripts)
+        result['post_id'] = None
+        # Try data-id on main content block
+        content_block = soup.select_one('[data-id]')
+        if content_block:
+            result['post_id'] = content_block.get('data-id', '')
+
+        # Try to extract from init scripts if not found
+        if not result['post_id']:
+            for script in soup.select('script'):
+                text = script.get_text()
+                match = re.search(r'(?:initCDNMoviesEvents|initCDNSeriesEvents)\(\s*(\d+)', text)
+                if match:
+                    result['post_id'] = match.group(1)
+                    break
+                match = re.search(r'sof\.tv\.(\d+)', text)
+                if match:
+                    result['post_id'] = match.group(1)
+                    break
+
+        # Extract translators (voice tracks)
+        result['translator_list'] = []
+        for li in soup.select('#translators-list li, .b-translators__list li'):
+            tr_id = li.get('data-translator_id', '')
+            title = li.get_text(strip=True)
+            if tr_id:
+                result['translator_list'].append({
+                    'id': tr_id,
+                    'title': title,
                 })
 
-            return result
-        except Exception as e:
-            logger.exception('HdRezkaApi seasons error: url=%s', url)
-            return []
-
-    def get_streams(self, url: str, season: str = '', episode: str = '',
-                    translator_id: str = '') -> list:
-        """Получить прямые ссылки на видеопотоки.
-
-        Args:
-            url: URL фильма/сериала
-            season: Номер сезона (для сериалов)
-            episode: Номер эпизода (для сериалов)
-            translator_id: ID переводчика
-
-        Returns:
-            List[dict]: [{'voice_id', 'title', 'hls_url', 'has_quality', 'videos': {quality: [urls]}}]
-        """
-        try:
-            url = self._normalize_url(url)
-            rezka = HdRezkaApi(url)
-
-            # Если переводчик не указан, использовать первый из приоритетного списка
-            if not translator_id:
-                translator_id = list(rezka.translators.keys())[0] if rezka.translators else None
-
-            if not translator_id:
-                logger.warning('No translators found for: %s', url)
-                return []
-
-            stream = None
-            if rezka.type == 'tv_series' and season and episode:
-                stream = rezka.getStream(season, episode, int(translator_id))
-            elif rezka.type == 'movie':
-                stream = rezka.getStream(translation=int(translator_id))
-            else:
-                logger.warning('Invalid stream request: type=%s, season=%s, episode=%s',
-                             rezka.type, season, episode)
-                return []
-
-            if not stream:
-                return []
-
-            # Получить название переводчика
-            translator_name = ''
-            if translator_id in rezka.translators:
-                translator_name = rezka.translators[translator_id]['name']
-
-            # Форматировать видеопотоки
-            tracks = []
-            videos = stream.videos  # {'360p': [url1, url2], '720p': [...], ...}
-
-            # Создать один трек с всеми качествами
-            track = {
-                'voice_id': str(translator_id),
-                'title': translator_name,
-                'has_quality': len(videos) > 1,
-                'videos': videos,  # {'360p': [urls], '720p': [urls], ...}
-                'subtitles': {},
-            }
-
-            # Добавить субтитры если есть
-            if stream.subtitles and stream.subtitles.keys:
-                for lang_code in stream.subtitles.keys:
-                    subtitle_data = stream.subtitles.subtitles.get(lang_code, {})
-                    track['subtitles'][lang_code] = {
-                        'title': subtitle_data.get('title', lang_code),
-                        'link': subtitle_data.get('link', ''),
-                    }
-
-            tracks.append(track)
-            return tracks
-        except Exception as e:
-            logger.exception('HdRezkaApi get_streams error: url=%s', url)
-            return []
-
-    def browse(self, category: str = 'films', page: int = 1) -> list:
-        """Просмотр категории (ограничено через поиск).
-
-        HdRezkaApi не имеет прямого browse API, используем advanced search.
-        """
-        try:
-            # Для browse используем прямой парсинг страницы категории
-            from bs4 import BeautifulSoup
-            import requests
-            from HdRezkaApi.types import default_cookies, default_headers
-
-            category_path = CATEGORY_MAP.get(category, 'films')
-            url = f'{self.base_url}/{category_path}/'
-            if page > 1:
-                url += f'page/{page}/'
-
-            r = requests.get(url, headers=default_headers, cookies=default_cookies, timeout=12)
-            if not r.ok:
-                return []
-
-            soup = BeautifulSoup(r.content, 'html.parser')
-            results = []
-
-            for item in soup.select('.b-content__inline_item'):
-                try:
-                    link_el = item.select_one('.b-content__inline_item-link a')
-                    img_el = item.select_one('.b-content__inline_item-cover img')
-                    title_el = item.select_one('.b-content__inline_item-link a')
-
-                    url_item = link_el.get('href', '') if link_el else ''
-                    image = img_el.get('src', '') if img_el else ''
-                    title = title_el.get_text(strip=True) if title_el else ''
-
-                    # Определить тип
-                    cat_el = item.select_one('.cat')
-                    content_type = 'movie'
-                    if cat_el:
-                        classes = cat_el.get('class', [])
-                        if 'series' in classes:
-                            content_type = 'series'
-                        elif 'cartoons' in classes:
-                            content_type = 'cartoon'
-                        elif 'animation' in classes:
-                            content_type = 'anime'
-
-                    results.append({
-                        'id': url_item.split('/')[-1].split('-')[0] if url_item else '',
-                        'title': title,
-                        'url': self._normalize_url(url_item),
-                        'image': image,
-                        'type': content_type,
+        # If no translator list, try default from init script
+        if not result['translator_list']:
+            for script in soup.select('script'):
+                text = script.get_text()
+                match = re.search(r'(?:initCDNMoviesEvents|initCDNSeriesEvents)\(\s*\d+\s*,\s*(\d+)', text)
+                if match:
+                    result['translator_list'].append({
+                        'id': match.group(1),
+                        'title': 'По умолчанию',
                     })
-                except Exception:
-                    continue
+                    break
 
-            return results
-        except Exception as e:
-            logger.exception('HdRezkaApi browse error: cat=%s page=%s', category, page)
+        # Extract season/episode info for series from init scripts
+        result['default_season'] = None
+        result['default_episode'] = None
+        for script in soup.select('script'):
+            text = script.get_text()
+            match = re.search(r'initCDNSeriesEvents\(\s*\d+\s*,\s*\d+\s*,\s*(\d+)\s*,\s*(\d+)', text)
+            if match:
+                result['default_season'] = match.group(1)
+                result['default_episode'] = match.group(2)
+                break
+
+        # Player embed URL — check tabs first, then lazy iframes
+        result['player_url'] = None
+        for el in soup.select('.js-player-tabs li[data-src], .player-tabs li[data-src]'):
+            src = el.get('data-src', '')
+            if src and 'http' in src:
+                result['player_url'] = src
+                break
+        if not result['player_url']:
+            for iframe in soup.select('iframe[data-src], iframe[src]'):
+                src = iframe.get('data-src') or iframe.get('src', '')
+                if src and ('cinemar' in src or 'cinemap' in src or 'embed' in src):
+                    result['player_url'] = src
+                    break
+        # Always provide the original page URL for "watch on site" fallback
+        result['source_url'] = url
+
+        # Related items
+        related = []
+        for rel in soup.select('.relatedItem, [data-id].relatedItem'):
+            try:
+                rel_id = rel.get('data-id', '')
+                rel_link = rel.select_one('a')
+                rel_title = rel.get_text(strip=True)[:100] if not rel_link else rel_link.get_text(strip=True)[:100]
+                rel_href = rel_link.get('href', '') if rel_link else ''
+                related.append({
+                    'id': rel_id,
+                    'title': rel_title,
+                    'url': rel_href,
+                })
+            except Exception:
+                continue
+        result['related'] = related[:10]
+
+        # Content type from URL
+        result['content_type'] = 'movie'
+        if '/serialy/' in url:
+            result['content_type'] = 'series'
+        elif '/multfilmy/' in url or '/multserial/' in url:
+            result['content_type'] = 'cartoon'
+        elif '/anime/' in url:
+            result['content_type'] = 'anime'
+
+        return result
+
+
+    def get_seasons(self, url):
+        """Extract list of seasons and episodes for a series from HDRezka page."""
+        soup = self._get(url)
+        if not soup:
             return []
 
-    def get_categories(self) -> list:
-        """Список категорий контента."""
+        seasons = {}
+
+        # Try to find initCDNSeriesEvents in scripts
+        for script in soup.select('script'):
+            text = script.get_text()
+            matches = re.finditer(
+                r'initCDNSeriesEvents\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)',
+                text
+            )
+            for match in matches:
+                post_id = match.group(1)
+                translator_id = match.group(2)
+                season = int(match.group(3))
+                episode = int(match.group(4))
+
+                if season not in seasons:
+                    seasons[season] = []
+
+                if not any(ep['episode'] == episode for ep in seasons[season]):
+                    seasons[season].append({
+                        'episode': episode,
+                        'name': f'Эпизод {episode}',
+                    })
+
+        # If no seasons found from scripts, try to extract from title/meta
+        if not seasons:
+            # Look for season info in page title (e.g. "1-5 сезон")
+            if soup.title:
+                title_text = soup.title.get_text()
+                season_match = re.search(r'\((\d+)(?:-(\d+))?\s*сезон', title_text, re.IGNORECASE)
+                if season_match:
+                    start_season = int(season_match.group(1))
+                    end_season = int(season_match.group(2)) if season_match.group(2) else start_season
+                    
+                    for season_num in range(start_season, end_season + 1):
+                        seasons[season_num] = []
+                        # Default to 24 episodes per season (common for TV series)
+                        for ep_num in range(1, 25):
+                            seasons[season_num].append({
+                                'episode': ep_num,
+                                'name': f'Эпизод {ep_num}',
+                            })
+
+        # Sort episodes within each season
+        for season in seasons:
+            seasons[season].sort(key=lambda x: x['episode'])
+
+        # Convert to list format
+        result = []
+        for season_num in sorted(seasons.keys()):
+            result.append({
+                'season': season_num,
+                'name': f'Сезон {season_num}',
+                'episodes': seasons[season_num],
+            })
+
+        return result
+
+
+    def get_categories(self):
+        """Get main category pages from the site."""
         return [
-            {'id': 'films', 'name': 'Фильмы', 'url': f'{self.base_url}/films/'},
-            {'id': 'series', 'name': 'Сериалы', 'url': f'{self.base_url}/series/'},
-            {'id': 'cartoons', 'name': 'Мультфильмы', 'url': f'{self.base_url}/cartoons/'},
-            {'id': 'anime', 'name': 'Аниме', 'url': f'{self.base_url}/animation/'},
+            {'id': 'films', 'name': 'Фильмы', 'url': f'{self.base_url}/filmy/'},
+            {'id': 'series', 'name': 'Сериалы', 'url': f'{self.base_url}/serialy/'},
+            {'id': 'cartoons', 'name': 'Мультфильмы', 'url': f'{self.base_url}/multfilmy/'},
+            {'id': 'anime', 'name': 'Аниме', 'url': f'{self.base_url}/anime/'},
         ]
 
+    # ------------------------------------------------------------------
+    # Stream extraction — parse cinemar.cc embed to get direct HLS URLs
+    # ------------------------------------------------------------------
 
-# Singleton instance
-hdrezka_api_service = HdRezkaApiService()
+    def get_streams_from_embed(self, embed_url, translator_id='', season='', episode=''):
+        """Extract HLS stream URLs from cinemar.cc embed page.
+
+        Parses the Cinemar player config which contains base64-encoded JSON
+        with voice tracks and their HLS playlist URLs.
+
+        Parameters:
+        - embed_url: Base embed URL from detail
+        - translator_id: Translator ID for switching voice tracks
+        - season: Season number
+        - episode: Episode number
+
+        Returns list of voice tracks with HLS URLs.
+        """
+        if not embed_url:
+            return []
+
+        try:
+            # Build request headers with proper referer
+            headers = {
+                'Referer': f'{self.base_url}/',
+                'X-Requested-With': 'XMLHttpRequest',
+            }
+            
+            # If season and episode are provided, we need to get the right URL
+            # The player URL from detail might be generic, but for series we need 
+            # to request specific episode streams
+            if season and episode:
+                # For series, the embed URL already contains everything we need
+                # But we might need to fetch a different page or use AJAX
+                pass
+
+            r = self.session.get(
+                embed_url,
+                headers=headers,
+                timeout=15,
+            )
+            if r.status_code != 200:
+                logger.warning('Embed fetch failed: %s -> %s', embed_url, r.status_code)
+                return []
+
+            html = r.text
+
+            # Extract the "file" field from Cinemar player config
+            match = re.search(r'"file":"(.*?)"', html)
+            if not match:
+                return []
+
+            file_data = match.group(1).replace('\\/', '/')
+            cleaned = file_data.lstrip('#')
+
+            # Find base64 JSON start: W3s = [{ or eyJ = {"
+            b64_start = -1
+            for marker in ['W3s', 'eyJ']:
+                idx = cleaned.find(marker)
+                if idx >= 0:
+                    b64_start = idx
+                    break
+
+            if b64_start < 0:
+                return []
+
+            b64_data = cleaned[b64_start:]
+            # Clean non-base64 chars, strip existing padding
+            b64_data = re.sub(r'[^A-Za-z0-9+/]', '', b64_data)
+            # Truncate to valid base64 length (multiple of 4)
+            b64_data = b64_data[:len(b64_data) - (len(b64_data) % 4)]
+
+            decoded = base64.b64decode(b64_data).decode('utf-8', errors='replace')
+
+            # Parse the JSON array — fix escape issues first
+            # Find the closing bracket of the array
+            bracket_count = 0
+            end_idx = len(decoded)
+            for i, c in enumerate(decoded):
+                if c == '[':
+                    bracket_count += 1
+                elif c == ']':
+                    bracket_count -= 1
+                    if bracket_count == 0:
+                        end_idx = i + 1
+                        break
+
+            json_str = decoded[:end_idx]
+            # Fix invalid escape sequences that break json.loads
+            json_str = re.sub(r'\\(?!["\\/bfnrtu])', r'\\\\', json_str)
+
+            import json as json_mod
+            try:
+                data = json_mod.loads(json_str, strict=False)
+            except Exception:
+                # Fallback to regex extraction
+                data = []
+                for m in re.finditer(
+                    r'"voice_id":(\d+).*?"title":"((?:[^"\\]|\\.)*)".*?"file":"((?:[^"\\]|\\.)*)"',
+                    decoded,
+                ):
+                    data.append({
+                        'voice_id': int(m.group(1)),
+                        'title': m.group(2),
+                        'file': m.group(3).replace('\\/', '/'),
+                    })
+
+            tracks = []
+            seen_voices = {}  # voice_id -> track (deduplicate)
+            items = data if isinstance(data, list) else [data]
+            for item in items:
+                voice_id = str(item.get('voice_id', ''))
+                title = item.get('title', '')
+                file_url = item.get('file', '').replace('\\/', '/')
+
+                # Strip HTML tags from title (e.g. <img src="flags/jp.png">)
+                title = re.sub(r'<[^>]+>', '', title).strip()
+
+                if not file_url or not title:
+                    continue
+
+                if file_url.startswith('//'):
+                    file_url = 'https:' + file_url
+
+                # Ensure master playlist URL (hls.m3u8) for quality selection
+                has_quality = 'hls.m3u8' in file_url and 'hls-v' not in file_url
+
+                # Deduplicate by voice_id — prefer tracks with quality
+                if voice_id in seen_voices:
+                    if has_quality and not seen_voices[voice_id]['has_quality']:
+                        seen_voices[voice_id] = {
+                            'voice_id': voice_id,
+                            'title': title,
+                            'hls_url': file_url,
+                            'has_quality': has_quality,
+                        }
+                else:
+                    seen_voices[voice_id] = {
+                        'voice_id': voice_id,
+                        'title': title,
+                        'hls_url': file_url,
+                        'has_quality': has_quality,
+                    }
+
+            return list(seen_voices.values())
+        except Exception as e:
+            logger.exception('get_streams_from_embed error: %s', embed_url)
+            return []
+
+    def browse(self, category='filmy', page=1):
+        """Browse a category page."""
+        url = f'{self.base_url}/{category}/'
+        if page > 1:
+            url += f'page/{page}/'
+        soup = self._get(url)
+        if not soup:
+            return []
+
+        results = []
+        for item in soup.select('.postItem'):
+            try:
+                data_id = item.get('data-id', '')
+                cover = item.select_one('.postItem-cover')
+                link = cover.get('data-link', '') if cover else ''
+                img = item.select_one('img')
+                img_src = self._abs_url(img.get('data-src') or img.get('src')) if img else None
+                title_el = item.select_one('.postItem-title a, h3 a, a')
+                title = title_el.get_text(strip=True) if title_el else ''
+
+                results.append({
+                    'id': data_id,
+                    'title': title,
+                    'url': link,
+                    'image': img_src,
+                })
+            except Exception:
+                continue
+
+        return results
+
+
+hdrezka_service = HdRezkaService()
