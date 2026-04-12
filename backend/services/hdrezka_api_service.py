@@ -2,6 +2,51 @@
 
 import logging
 from typing import Optional
+from urllib.parse import quote, urlparse
+import sys
+
+# CORS прокси для обхода блокировки HDRezka
+# Используем наш локальный прокси сервер
+LOCAL_PROXY_URL = 'http://localhost:5000/api/proxy/hdrezka'
+
+# Патчим requests для использования нашего локального прокси
+import requests
+_original_request = requests.Session.request
+
+def _patched_request(self, method, url, *args, **kwargs):
+    """Patch requests to route HDRezka through our local proxy."""
+    # Don't proxy localhost requests (would cause infinite loop)
+    if url and 'hdrezka' in url.lower() and 'localhost' not in url.lower() and '127.0.0.1' not in url.lower():
+        # Use our local proxy endpoint
+        proxy_url = f'{LOCAL_PROXY_URL}?url={quote(url, safe="")}&method={method}'
+        
+        # For POST requests, we need to handle body differently
+        if method == 'POST':
+            # Extract POST data from kwargs
+            post_data = kwargs.pop('data', None)
+            json_data = kwargs.pop('json', None)
+            
+            if post_data:
+                return _original_request(
+                    self, 'POST', proxy_url, 
+                    data=post_data, 
+                    **kwargs
+                )
+            elif json_data:
+                return _original_request(
+                    self, 'POST', proxy_url,
+                    json=json_data,
+                    **kwargs
+                )
+        
+        return _original_request(self, method, proxy_url, *args, **kwargs)
+    return _original_request(self, method, url, *args, **kwargs)
+
+# Применяем monkey patch
+requests.Session.request = _patched_request
+requests.request = _patched_request
+
+# Теперь импортируем HdRezkaApi (он будет использовать проксированный requests)
 from HdRezkaApi import HdRezkaApi, HdRezkaSearch
 from HdRezkaApi.errors import FetchFailed, LoginRequiredError, CaptchaError, HTTP
 
@@ -20,36 +65,15 @@ CATEGORY_MAP = {
 
 
 class HdRezkaApiService:
-    """Service wrapper над HdRezkaApi для совместимости с Pulse backend."""
+    """Service wrapper над HdRezkaApi для совместимости с Pulse backend.
+    
+    Все запросы к HDRezka автоматически проходят через CORS прокси
+    для обхода региональной блокировки.
+    """
 
     def __init__(self, base_url: str = HDREZKA_BASE_URL):
         self.base_url = base_url.rstrip('/')
-        # Создать поиск с таймаутом
-        from HdRezkaApi.types import default_cookies, default_headers
-        import requests
-        from requests.adapters import HTTPAdapter
-        from urllib3.util.retry import Retry
-
-        # Создать сессию с таймаутами
-        self._session = requests.Session()
-        self._session.headers.update(default_headers)
-        self._session.cookies.update(default_cookies)
-        
-        # Настроить retry с таймаутом
-        retry_strategy = Retry(
-            total=2,
-            backoff_factor=1,
-            status_forcelist=[429, 500, 502, 503, 504],
-        )
-        adapter = HTTPAdapter(max_retries=retry_strategy)
-        self._session.mount("http://", adapter)
-        self._session.mount("https://", adapter)
-
-        self._search = HdRezkaSearch(
-            self.base_url,
-            headers=default_headers,
-            cookies=default_cookies
-        )
+        self._search = HdRezkaSearch(self.base_url)
 
     def _normalize_url(self, url: str) -> str:
         """Убедиться что URL использует правильный базовый домен."""
@@ -65,38 +89,61 @@ class HdRezkaApiService:
 
     def search(self, query: str, limit: int = 20) -> list:
         """Поиск контента на HDRezka.
+        
+        Используем GET запрос через страницу поиска вместо POST API
+        т.к. CORS прокси лучше работает с GET.
 
         Returns:
             List[dict]: [{'id', 'title', 'url', 'image', 'type', 'rating'}]
         """
         try:
-            results = self._search(query)
-            if not results:
+            # Вместо POST /engine/ajax/search.php используем GET /search/
+            # Это работает через наш прокси лучше
+            from bs4 import BeautifulSoup
+            from HdRezkaApi.types import default_cookies, default_headers
+            
+            search_url = f'{self.base_url}/search/?do=search&subaction=search&q={quote(query)}'
+            
+            # Monkey-patched requests уже использует прокси
+            r = requests.get(search_url, headers=default_headers, cookies=default_cookies, timeout=20)
+            
+            if not r.ok:
                 return []
-
-            normalized = []
-            for item in results[:limit]:
-                url = self._normalize_url(item.get('url', ''))
-                category = item.get('category')
-                content_type = 'movie'
-                if category:
-                    cat_str = str(category).split('.')[-1] if category else ''
-                    if cat_str in ('series', 'tv_series'):
+            
+            soup = BeautifulSoup(r.content, 'html.parser')
+            results = []
+            
+            for item in soup.select('.b-search__section_list li')[:limit]:
+                try:
+                    title = item.find('span', class_='enty').get_text().strip()
+                    url = item.find('a').attrs['href']
+                    rating_span = item.find('span', class_='rating')
+                    rating = float(rating_span.get_text()) if rating_span else None
+                    
+                    # Нормализовать URL
+                    url = self._normalize_url(url)
+                    
+                    # Определить тип
+                    content_type = 'movie'
+                    if '/serialy/' in url:
                         content_type = 'series'
-                    elif cat_str == 'cartoon':
+                    elif '/multfilmy/' in url or '/multserial/' in url:
                         content_type = 'cartoon'
-                    elif cat_str == 'anime':
+                    elif '/animation/' in url:
                         content_type = 'anime'
-
-                normalized.append({
-                    'id': url.split('/')[-1].split('-')[0] if url else '',
-                    'title': item.get('title', ''),
-                    'url': url,
-                    'image': None,  # Fast search не возвращает изображения
-                    'type': content_type,
-                    'rating': item.get('rating'),
-                })
-            return normalized
+                    
+                    results.append({
+                        'id': url.split('/')[-1].split('-')[0] if url else '',
+                        'title': title,
+                        'url': url,
+                        'image': None,  # Fast search не возвращает изображения
+                        'type': content_type,
+                        'rating': rating,
+                    })
+                except Exception:
+                    continue
+            
+            return results
         except Exception as e:
             logger.exception('HdRezkaApi search error: q=%s', query)
             return []
