@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useRef } from 'react'
 import { useAuth } from '../context/AuthContext'
 import api from '../api/client'
 import './CinemaPage.css'
@@ -20,8 +20,156 @@ export default function CinemaPage() {
   const [activeTrack, setActiveTrack] = useState(null)
   const [playerLoading, setPlayerLoading] = useState(false)
   const [availableQualities, setAvailableQualities] = useState([])
+  
+  // Enhanced player features
+  const [isCinemaMode, setIsCinemaMode] = useState(false)
+  const [playbackSpeed, setPlaybackSpeed] = useState(1)
+  const [showControls, setShowControls] = useState(true)
+  const [savedProgress, setSavedProgress] = useState(null)
+  const videoRef = useRef(null)
+  const controlsTimeoutRef = useRef(null)
+  const containerRef = useRef(null)
 
   const isAdmin = user?.is_admin
+
+  // Cinema mode - dim background
+  useEffect(() => {
+    if (isCinemaMode) {
+      document.body.classList.add('cinema-mode-active')
+    } else {
+      document.body.classList.remove('cinema-mode-active')
+    }
+    return () => document.body.classList.remove('cinema-mode-active')
+  }, [isCinemaMode])
+
+  // Auto-hide controls
+  useEffect(() => {
+    const container = containerRef.current
+    if (!container || !activeTrack) return
+
+    const handleMouseMove = () => {
+      setShowControls(true)
+      clearTimeout(controlsTimeoutRef.current)
+      controlsTimeoutRef.current = setTimeout(() => {
+        setShowControls(false)
+      }, 3000)
+    }
+
+    container.addEventListener('mousemove', handleMouseMove)
+    return () => {
+      container.removeEventListener('mousemove', handleMouseMove)
+      clearTimeout(controlsTimeoutRef.current)
+    }
+  }, [activeTrack])
+
+  // Keyboard shortcuts
+  useEffect(() => {
+    if (!activeTrack) return
+
+    const handleKeyDown = (e) => {
+      const tagName = document.activeElement?.tagName
+      if (tagName === 'INPUT' || tagName === 'TEXTAREA') return
+
+      const video = videoRef.current
+      if (!video) return
+
+      switch(e.key.toLowerCase()) {
+        case ' ':
+          e.preventDefault()
+          video.paused ? video.play() : video.pause()
+          break
+        case 'f':
+          e.preventDefault()
+          if (!document.fullscreenElement) {
+            containerRef.current?.requestFullscreen?.()
+          } else {
+            document.exitFullscreen?.()
+          }
+          break
+        case 'c':
+          e.preventDefault()
+          setIsCinemaMode(prev => !prev)
+          break
+        case 'm':
+          e.preventDefault()
+          video.muted = !video.muted
+          break
+        case 'arrowright':
+          e.preventDefault()
+          video.currentTime = Math.min(video.duration, video.currentTime + 10)
+          break
+        case 'arrowleft':
+          e.preventDefault()
+          video.currentTime = Math.max(0, video.currentTime - 10)
+          break
+        case 'arrowup':
+          e.preventDefault()
+          video.volume = Math.min(1, video.volume + 0.1)
+          break
+        case 'arrowdown':
+          e.preventDefault()
+          video.volume = Math.max(0, video.volume - 0.1)
+          break
+        case 'escape':
+          if (isCinemaMode) setIsCinemaMode(false)
+          break
+        default:
+          break
+      }
+    }
+
+    window.addEventListener('keydown', handleKeyDown)
+    return () => window.removeEventListener('keydown', handleKeyDown)
+  }, [activeTrack, isCinemaMode])
+
+  // Save progress
+  useEffect(() => {
+    const video = videoRef.current
+    if (!video || !selectedItem) return
+
+    const handleTimeUpdate = () => {
+      const progress = {
+        url: selectedItem.url,
+        season: selectedSeason,
+        episode: selectedEpisode,
+        time: video.currentTime,
+        duration: video.duration,
+        timestamp: Date.now()
+      }
+      localStorage.setItem(`hdrezka_progress_${selectedItem.id}`, JSON.stringify(progress))
+    }
+
+    // Load saved progress
+    const saved = localStorage.getItem(`hdrezka_progress_${selectedItem.id}`)
+    if (saved) {
+      try {
+        const progress = JSON.parse(saved)
+        if (progress.season === selectedSeason && progress.episode === selectedEpisode) {
+          setSavedProgress(progress)
+        }
+      } catch (e) {}
+    }
+
+    video.addEventListener('timeupdate', handleTimeUpdate)
+    return () => video.removeEventListener('timeupdate', handleTimeUpdate)
+  }, [selectedItem, selectedSeason, selectedEpisode, activeTrack])
+
+  // Set playback speed
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackSpeed
+    }
+  }, [playbackSpeed])
+
+  // Auto-play next episode for series
+  const handleVideoEnd = useCallback(() => {
+    if (seasons.length > 0 && selectedEpisode < seasons[selectedSeason]?.episodes?.length - 1) {
+      // Auto-advance to next episode after 5 seconds
+      setTimeout(() => {
+        handleEpisodeChange(selectedEpisode + 1)
+      }, 5000)
+    }
+  }, [seasons, selectedSeason, selectedEpisode])
 
   // Load categories
   useEffect(() => {
@@ -386,28 +534,34 @@ export default function CinemaPage() {
 
             {/* Player */}
             {activeTrack && (
-              <div className="cinema-player-section">
-                <div className="player-header">
-                  <h3><i className="ri-play-circle-line"></i> Плеер</h3>
-                  
-                  {/* Quality selector */}
-                  {availableQualities.length > 1 && (
-                    <div className="quality-selector">
-                      <label htmlFor="quality-select">
-                        <i className="ri-film-line"></i> Качество:
-                      </label>
-                      <select
-                        id="quality-select"
-                        value={selectedQuality}
-                        onChange={(e) => handleQualityChange(e.target.value)}
-                      >
-                        {availableQualities.map(q => (
-                          <option key={q} value={q}>{q}</option>
-                        ))}
-                      </select>
-                    </div>
-                  )}
+              <div className="cinema-player-section" ref={containerRef}>
+                <div className={`player-header ${!showControls && 'hidden'}`}>
+                  <div className="player-title">
+                    <span className="player-icon">▶</span>
+                    <h3>{detail.title}{selectedSeason !== null && seasons[selectedSeason] ? ` - ${seasons[selectedSeason].name}` : ''}{selectedEpisode !== null && seasons[selectedSeason]?.episodes ? `, Серия ${seasons[selectedSeason].episodes[selectedEpisode]?.episode}` : ''}</h3>
+                  </div>
+                  <div className="player-actions">
+                    <button 
+                      className="player-btn" 
+                      onClick={() => setIsCinemaMode(!isCinemaMode)}
+                      title="Кинематографический режим (C)"
+                    >
+                      <i className="ri-film-line"></i> Cinema
+                    </button>
+                    <button 
+                      className="player-btn" 
+                      onClick={() => {
+                        if (videoRef.current) {
+                          videoRef.current.requestPictureInPicture?.()
+                        }
+                      }}
+                      title="Picture-in-Picture"
+                    >
+                      <i className="ri-picture-in-picture-line"></i>
+                    </button>
+                  </div>
                 </div>
+
                 <div className="cinema-player-wrapper">
                   {playerLoading ? (
                     <div className="player-loading">
@@ -415,19 +569,104 @@ export default function CinemaPage() {
                       <p>Загрузка плеера...</p>
                     </div>
                   ) : activeTrack.videos && selectedQuality ? (
-                    // Video player с прямыми ссылками на видео
-                    <video
-                      key={selectedQuality} // Re-mount при смене качества
-                      controls
-                      autoPlay
-                      className="cinema-player-video"
-                      poster={detail.poster}
-                    >
-                      {activeTrack.videos[selectedQuality]?.map((url, idx) => (
-                        <source key={idx} src={url} type="video/mp4" />
-                      ))}
-                      Ваш браузер не поддерживаетет воспроизведение видео.
-                    </video>
+                    <>
+                      <video
+                        ref={videoRef}
+                        key={selectedQuality}
+                        controls={false}
+                        autoPlay
+                        className="cinema-player-video"
+                        poster={detail.poster}
+                        onEnded={handleVideoEnd}
+                        onClick={() => {
+                          const video = videoRef.current
+                          video.paused ? video.play() : video.pause()
+                        }}
+                      >
+                        {activeTrack.videos[selectedQuality]?.map((url, idx) => (
+                          <source key={idx} src={url} type="video/mp4" />
+                        ))}
+                        Ваш браузер не поддерживает воспроизведение видео.
+                      </video>
+                      
+                      {/* Custom Controls Overlay */}
+                      <div className={`player-controls-overlay ${!showControls && 'hidden'}`}>
+                        {/* Playback Speed */}
+                        <div className="speed-controls">
+                          <span className="speed-label">Скорость:</span>
+                          {[0.5, 0.75, 1, 1.25, 1.5, 2].map(speed => (
+                            <button
+                              key={speed}
+                              className={`speed-btn ${playbackSpeed === speed ? 'active' : ''}`}
+                              onClick={() => setPlaybackSpeed(speed)}
+                            >
+                              {speed}x
+                            </button>
+                          ))}
+                        </div>
+                        
+                        {/* Continue from saved progress */}
+                        {savedProgress && (
+                          <div className="continue-prompt">
+                            <span>Продолжить с {Math.floor(savedProgress.time / 60)}:{String(Math.floor(savedProgress.time % 60)).padStart(2, '0')}?</span>
+                            <button 
+                              className="continue-btn"
+                              onClick={() => {
+                                if (videoRef.current) {
+                                  videoRef.current.currentTime = savedProgress.time
+                                }
+                                setSavedProgress(null)
+                              }}
+                            >
+                              Да
+                            </button>
+                            <button 
+                              className="skip-btn"
+                              onClick={() => setSavedProgress(null)}
+                            >
+                              Нет
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                      
+                      {/* Bottom Controls */}
+                      <div className={`player-bottom-controls ${!showControls && 'hidden'}`}>
+                        <div className="player-controls">
+                          <button className="control-btn" onClick={() => {
+                            if (videoRef.current) videoRef.current.currentTime -= 10
+                          }} title="Назад 10с (←)">
+                            <i className="ri-rewind-line"></i>
+                          </button>
+                          <button className="control-btn" onClick={() => {
+                            const video = videoRef.current
+                            video.muted = !video.muted
+                          }} title="Mute (M)">
+                            <i className={videoRef.current?.muted ? 'ri-volume-mute-line' : 'ri-volume-up-line'}></i>
+                          </button>
+                          <button className="control-btn" onClick={() => {
+                            if (videoRef.current) videoRef.current.currentTime += 10
+                          }} title="Вперед 10с (→)">
+                            <i className="ri-speed-line"></i>
+                          </button>
+                        </div>
+                        <div className="player-info">
+                          <span className="info-item">Space - Play/Pause</span>
+                          <span className="info-item">F - Fullscreen</span>
+                          <span className="info-item">C - Cinema</span>
+                          <span className="info-item">M - Mute</span>
+                        </div>
+                        <button className="control-btn fullscreen-btn" onClick={() => {
+                          if (!document.fullscreenElement) {
+                            containerRef.current?.requestFullscreen?.()
+                          } else {
+                            document.exitFullscreen?.()
+                          }
+                        }} title="Fullscreen (F)">
+                          <i className="ri-fullscreen-line"></i>
+                        </button>
+                      </div>
+                    </>
                   ) : (
                     <div className="player-no-video">
                       <i className="ri-error-warning-line"></i>
@@ -435,6 +674,22 @@ export default function CinemaPage() {
                     </div>
                   )}
                 </div>
+
+                {/* Next Episode Prompt */}
+                {seasons.length > 0 && selectedEpisode < seasons[selectedSeason]?.episodes?.length - 1 && (
+                  <div className="next-episode-prompt">
+                    <div className="prompt-content">
+                      <span className="prompt-icon">⏭</span>
+                      <span>Следующая серия через 5 сек...</span>
+                      <button 
+                        className="next-btn"
+                        onClick={() => handleEpisodeChange(selectedEpisode + 1)}
+                      >
+                        Смотреть сейчас
+                      </button>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
