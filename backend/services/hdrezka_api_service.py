@@ -511,3 +511,6 @@ class HdRezkaService:
 
 
 hdrezka_service = HdRezkaService()
+
+# Alias for compatibility with routes/hdrezka.py
+hdrezka_api_service = hdrezka_service  
