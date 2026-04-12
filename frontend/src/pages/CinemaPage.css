@@ -634,6 +634,163 @@
   transform: translateY(-2px);
 }
 
+/* Translators Section */
+.cinema-translators-section {
+  padding: 24px 32px;
+  border-top: 1px solid var(--border-color);
+}
+
+.cinema-translators-section h3 {
+  font-size: 1.1rem;
+  font-weight: 600;
+  margin: 0 0 16px 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.translators-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  max-height: 200px;
+  overflow-y: auto;
+}
+
+.translator-btn {
+  padding: 8px 16px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  position: relative;
+}
+
+.translator-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+
+.translator-btn.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: white;
+}
+
+.premium-badge {
+  margin-left: 6px;
+  padding: 2px 6px;
+  background: linear-gradient(135deg, #f59e0b, #d97706);
+  border-radius: 4px;
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: white;
+}
+
+/* Episodes Tabs */
+.episodes-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 12px;
+  max-height: 150px;
+  overflow-y: auto;
+}
+
+.episode-btn {
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-secondary);
+  font-size: 0.85rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.episode-btn:hover {
+  border-color: var(--accent-primary);
+  color: var(--accent-primary);
+  background: var(--bg-hover);
+}
+
+.episode-btn.active {
+  border-color: var(--accent-primary);
+  background: var(--accent-primary);
+  color: white;
+}
+
+/* Quality Selector */
+.quality-selector {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-left: auto;
+}
+
+.quality-selector label {
+  color: var(--text-muted);
+  font-size: 0.9rem;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.quality-selector select {
+  padding: 6px 12px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  color: var(--text-primary);
+  font-size: 0.85rem;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.quality-selector select:hover {
+  border-color: var(--accent-primary);
+}
+
+.quality-selector select:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+  box-shadow: 0 0 0 3px var(--accent-alpha);
+}
+
+/* Video Player */
+.cinema-player-video {
+  width: 100%;
+  height: auto;
+  background: black;
+  border-radius: 8px;
+}
+
+.player-no-video {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 400px;
+  color: var(--text-muted);
+  gap: 12px;
+}
+
+.player-no-video i {
+  font-size: 3rem;
+  color: var(--error-color, #ef4444);
+}
+
 /* Responsive */
 @media (max-width: 768px) {
   .cinema-page {
@@ -675,11 +832,19 @@
 
   .cinema-seasons-section,
   .cinema-voice-section,
+  .cinema-translators-section,
   .cinema-player-section,
   .cinema-description-section,
   .cinema-source-link {
     padding-left: 24px;
     padding-right: 24px;
+  }
+
+  .quality-selector {
+    margin-left: 0;
+    margin-top: 12px;
+    flex-direction: column;
+    align-items: flex-start;
   }
 }
 
@@ -695,7 +860,8 @@
 
   .seasons-tabs,
   .voice-tracks-list,
-  .episodes-list {
+  .episodes-list,
+  .translators-tabs {
     max-height: 150px;
     overflow-y: auto;
   }

@@ -14,8 +14,12 @@ export default function CinemaPage() {
   const [detail, setDetail] = useState(null)
   const [seasons, setSeasons] = useState([])
   const [selectedSeason, setSelectedSeason] = useState(0)
+  const [selectedEpisode, setSelectedEpisode] = useState(0)
+  const [selectedTranslator, setSelectedTranslator] = useState(null)
+  const [selectedQuality, setSelectedQuality] = useState('720p')
   const [activeTrack, setActiveTrack] = useState(null)
   const [playerLoading, setPlayerLoading] = useState(false)
+  const [availableQualities, setAvailableQualities] = useState([])
 
   const isAdmin = user?.is_admin
 
@@ -55,8 +59,11 @@ export default function CinemaPage() {
     setDetail(null)
     setSeasons([])
     setSelectedSeason(0)
+    setSelectedEpisode(0)
+    setSelectedTranslator(null)
     setActiveTrack(null)
     setPlayerLoading(true)
+    setAvailableQualities([])
 
     try {
       const detailRes = await api.get(`/api/hdrezka/detail?url=${encodeURIComponent(item.url)}`)
@@ -68,15 +75,13 @@ export default function CinemaPage() {
         setSeasons(seasonsRes.data.seasons || [])
       }
 
-      // Use embed proxy for iframe player
-      if (detailRes.data.player_url && detailRes.data.embed_sig) {
-        const proxyUrl = `/api/hdrezka/embed?url=${encodeURIComponent(detailRes.data.player_url)}&sig=${detailRes.data.embed_sig}`
-        setActiveTrack({
-          voice_id: 'default',
-          title: 'HDRezka Player',
-          hls_url: proxyUrl,
-          has_quality: true,
-        })
+      // Get streams from HDRezkaApi
+      if (detailRes.data.translator_list && detailRes.data.translator_list.length > 0) {
+        // Выбрать первого переводчика по умолчанию
+        const defaultTranslator = detailRes.data.translator_list[0]
+        setSelectedTranslator(defaultTranslator.id)
+
+        await loadStreams(item.url, defaultTranslator.id)
       }
     } catch (err) {
       console.error('Error loading detail:', err)
@@ -85,9 +90,81 @@ export default function CinemaPage() {
     }
   }, [isAdmin])
 
+  // Load streams
+  const loadStreams = useCallback(async (url, translatorId, seasonIdx, episodeIdx) => {
+    try {
+      setPlayerLoading(true)
+      const season = seasons[seasonIdx || selectedSeason]
+      const episode = season?.episodes?.[episodeIdx || selectedEpisode]
+
+      const params = new URLSearchParams({
+        url,
+        translator_id: translatorId,
+      })
+
+      // Добавить сезон и эпизод если это сериал
+      if (season && episode) {
+        params.append('season', season.season)
+        params.append('episode', episode.episode)
+      }
+
+      const streamsRes = await api.get(`/api/hdrezka/streams?${params.toString()}`)
+      
+      if (streamsRes.data.tracks && streamsRes.data.tracks.length > 0) {
+        const track = streamsRes.data.tracks[0]
+        setActiveTrack(track)
+        
+        // Извлечь доступные качества
+        const qualities = Object.keys(track.videos || {})
+        setAvailableQualities(qualities)
+        
+        // Выбрать качество по умолчанию (предпочтительно 720p)
+        if (qualities.includes('720p')) {
+          setSelectedQuality('720p')
+        } else if (qualities.length > 0) {
+          setSelectedQuality(qualities[0])
+        }
+      }
+    } catch (err) {
+      console.error('Error loading streams:', err)
+      // Fallback к ссылке на источник
+      setActiveTrack(null)
+    } finally {
+      setPlayerLoading(false)
+    }
+  }, [seasons, selectedSeason, selectedEpisode])
+
   // Handle season change
   const handleSeasonChange = useCallback((seasonIndex) => {
     setSelectedSeason(seasonIndex)
+    setSelectedEpisode(0)
+    // Перезагрузить стримы для нового сезона/эпизода
+    if (selectedTranslator && selectedItem?.url) {
+      loadStreams(selectedItem.url, selectedTranslator, seasonIndex, 0)
+    }
+  }, [selectedTranslator, selectedItem, loadStreams])
+
+  // Handle episode change
+  const handleEpisodeChange = useCallback((episodeIndex) => {
+    setSelectedEpisode(episodeIndex)
+    // Перезагрузить стримы для нового эпизода
+    if (selectedTranslator && selectedItem?.url) {
+      loadStreams(selectedItem.url, selectedTranslator, selectedSeason, episodeIndex)
+    }
+  }, [selectedTranslator, selectedItem, selectedSeason, loadStreams])
+
+  // Handle translator change
+  const handleTranslatorChange = useCallback((translatorId) => {
+    setSelectedTranslator(translatorId)
+    // Перезагрузить стримы для нового переводчика
+    if (translatorId && selectedItem?.url) {
+      loadStreams(selectedItem.url, translatorId)
+    }
+  }, [selectedItem, loadStreams])
+
+  // Handle quality change
+  const handleQualityChange = useCallback((quality) => {
+    setSelectedQuality(quality)
   }, [])
 
   // Close detail view
@@ -96,7 +173,10 @@ export default function CinemaPage() {
     setDetail(null)
     setSeasons([])
     setSelectedSeason(0)
+    setSelectedEpisode(0)
+    setSelectedTranslator(null)
     setActiveTrack(null)
+    setAvailableQualities([])
   }, [])
 
   if (!isAdmin) {
@@ -255,7 +335,7 @@ export default function CinemaPage() {
             {/* Season Info */}
             {seasons.length > 0 && (
               <div className="cinema-seasons-section">
-                <h3><i className="ri-list-check"></i> Сезоны</h3>
+                <h3><i className="ri-list-check"></i> Сезоны и серии</h3>
                 <div className="seasons-tabs">
                   {seasons.map((season, idx) => (
                     <button
@@ -267,10 +347,40 @@ export default function CinemaPage() {
                     </button>
                   ))}
                 </div>
-                <p className="seasons-hint">
-                  <i className="ri-information-line"></i>
-                  Переключайте серии внутри плеера HDRezka
-                </p>
+                
+                {/* Episode selector */}
+                {seasons[selectedSeason]?.episodes && seasons[selectedSeason].episodes.length > 0 && (
+                  <div className="episodes-tabs">
+                    {seasons[selectedSeason].episodes.map((ep, idx) => (
+                      <button
+                        key={idx}
+                        className={`episode-btn ${selectedEpisode === idx ? 'active' : ''}`}
+                        onClick={() => handleEpisodeChange(idx)}
+                      >
+                        {ep.episode}
+                      </button>
+                    ))}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Translator selector */}
+            {detail.translator_list && detail.translator_list.length > 1 && (
+              <div className="cinema-translators-section">
+                <h3><i className="ri-translate"></i> Озвучка</h3>
+                <div className="translators-tabs">
+                  {detail.translator_list.map((tr) => (
+                    <button
+                      key={tr.id}
+                      className={`translator-btn ${selectedTranslator === tr.id ? 'active' : ''}`}
+                      onClick={() => handleTranslatorChange(tr.id)}
+                    >
+                      {tr.title}
+                      {tr.premium && <span className="premium-badge">Premium</span>}
+                    </button>
+                  ))}
+                </div>
               </div>
             )}
 
@@ -279,6 +389,24 @@ export default function CinemaPage() {
               <div className="cinema-player-section">
                 <div className="player-header">
                   <h3><i className="ri-play-circle-line"></i> Плеер</h3>
+                  
+                  {/* Quality selector */}
+                  {availableQualities.length > 1 && (
+                    <div className="quality-selector">
+                      <label htmlFor="quality-select">
+                        <i className="ri-film-line"></i> Качество:
+                      </label>
+                      <select
+                        id="quality-select"
+                        value={selectedQuality}
+                        onChange={(e) => handleQualityChange(e.target.value)}
+                      >
+                        {availableQualities.map(q => (
+                          <option key={q} value={q}>{q}</option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
                 <div className="cinema-player-wrapper">
                   {playerLoading ? (
@@ -286,14 +414,25 @@ export default function CinemaPage() {
                       <div className="spinner"></div>
                       <p>Загрузка плеера...</p>
                     </div>
+                  ) : activeTrack.videos && selectedQuality ? (
+                    // Video player с прямыми ссылками на видео
+                    <video
+                      key={selectedQuality} // Re-mount при смене качества
+                      controls
+                      autoPlay
+                      className="cinema-player-video"
+                      poster={detail.poster}
+                    >
+                      {activeTrack.videos[selectedQuality]?.map((url, idx) => (
+                        <source key={idx} src={url} type="video/mp4" />
+                      ))}
+                      Ваш браузер не поддерживаетет воспроизведение видео.
+                    </video>
                   ) : (
-                    <iframe
-                      src={activeTrack.hls_url}
-                      allow="autoplay; encrypted-media; fullscreen"
-                      allowFullScreen
-                      className="cinema-player-iframe"
-                      title="Video Player"
-                    />
+                    <div className="player-no-video">
+                      <i className="ri-error-warning-line"></i>
+                      <p>Видеопоток недоступен для выбранного качества</p>
+                    </div>
                   )}
                 </div>
               </div>
